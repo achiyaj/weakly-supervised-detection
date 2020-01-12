@@ -47,5 +47,6 @@ class InferenceMLPModel(MLPModel):
         unpadded_imgs = [output[i, :num_descs[i], :] for i in range(num_descs.shape[0])]
         unpadded_imgs = [x.detach().cpu().numpy() for x in unpadded_imgs]
         pred_labels = [np.argmax(x, axis=1).tolist() for x in unpadded_imgs]
+        pred_probs = [np.max(x, axis=1).tolist() for x in unpadded_imgs]
 
-        return pred_labels
+        return pred_labels, pred_probs

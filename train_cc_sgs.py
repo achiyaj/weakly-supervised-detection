@@ -11,6 +11,7 @@ import argparse
 import os
 from sklearn.metrics import accuracy_score
 from pdb import set_trace as trace
+from tqdm import tqdm
 
 
 def main(args):
@@ -38,7 +39,7 @@ def main(args):
     os.makedirs(os.path.dirname(cur_ckpt_path), exist_ok=True)
 
     for epoch in range(NUM_EPOCHS):
-        for i, data in enumerate(train_loader):
+        for i, data in tqdm(enumerate(train_loader), total=len(train_loader), desc=f'Training epoch {epoch}'):
             inputs = data['descs'].float().to(device)
             num_descs = data['num_descs'].long().to(device)
             labels = data['label'].squeeze().long().to(device)
@@ -55,14 +56,13 @@ def main(args):
             # print statistics
             if i % PRINT_EVERY == PRINT_EVERY - 1:  # print every N mini-batches
                 print('[%d, %5d] Train loss: %.3f' % (epoch + 1, i + 1, loss.item()))
-                break
 
         # perform validation
         running_val_loss = 0
         inference_net.load_state_dict(training_net.state_dict())
 
         with torch.set_grad_enabled(False):
-            for i, data in enumerate(val_loader):
+            for i, data in tqdm(enumerate(val_loader), total=len(val_loader), desc=f'Validation epoch {epoch}'):
                 inputs = data['descs'].float().to(device)
                 num_descs = data['num_descs'].long().to(device)
                 labels = data['label'].squeeze().long().to(device)
@@ -80,7 +80,6 @@ def main(args):
                 if best_val_epoch + EARLY_STOPPING <= epoch:
                     print('Early stopping after {} epochs'.format(epoch))
                     print(f'Best val epoch was {best_val_epoch}')
-
                     return
 
 

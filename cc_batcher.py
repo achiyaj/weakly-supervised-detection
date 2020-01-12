@@ -73,7 +73,7 @@ def build_cc_relevant_data(gqa_only, num_objs, num_atts, dset):
 
 
 class MaxLossCCDataset(Dataset):
-    def __init__(self, gqa_only, num_objs, num_atts, dset):
+    def __init__(self, gqa_only, num_objs, num_atts, dset, img_ids=None):
         relevant_data_file = get_relevant_data_file(gqa_only, num_objs, num_atts, dset)
         if os.path.isfile(relevant_data_file):
             relevant_data = json.load(open(relevant_data_file, 'r'))
@@ -85,11 +85,15 @@ class MaxLossCCDataset(Dataset):
             self.objs, self.atts, self.objs_data, self.objs_and_atts_data = \
                 build_cc_relevant_data(gqa_only, num_objs, num_atts, dset)
 
-        descriptors_env = lmdb.open(descriptors_file, subdir=False, readonly=True, lock=False, readahead=False,
-                                    meminit=False)
-        txn = descriptors_env.begin(write=False)
-        self.descriptors_curs = txn.cursor()
+        self.descriptors_env = lmdb.open(descriptors_file, subdir=False, readonly=True, lock=False, readahead=True,
+                                         meminit=False)
+        self.txn = self.descriptors_env.begin(write=False)
+        self.descriptors_curs = self.txn.cursor()
         self.line_to_imgs_id = json.load(open(line_to_img_id_file.format(dset)))
+
+        if img_ids:  # if the image IDs to load are specified
+            self.objs_data = [x for x in self.objs_data if x[0] in img_ids]
+            self.objs_and_atts_data = [x for x in self.objs_and_atts_data if x[0] in img_ids]
 
     def __len__(self):
         # return len(self.objs_data) + len(self.objs_and_atts_data)
@@ -113,9 +117,12 @@ class MaxLossCCDataset(Dataset):
     def get_class_labels(self):
         return self.objs
 
+    def __del__(self):
+        self.descriptors_env.close()
 
-def get_dataloader(dset):
-    dataset = MaxLossCCDataset(GQA_LABELS_ONLY, NUM_TOP_OBJS, NUM_TOP_ATTS, dset)
+
+def get_dataloader(dset, img_ids=None):
+    dataset = MaxLossCCDataset(GQA_LABELS_ONLY, NUM_TOP_OBJS, NUM_TOP_ATTS, dset, img_ids)
     if dset == 'val':
         return DataLoader(dataset, **val_loader_params)
     return DataLoader(dataset, **train_loader_params)
