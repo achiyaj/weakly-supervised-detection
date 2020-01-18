@@ -5,12 +5,8 @@ import torch.optim as optim
 from model import TrainingMLPModel, InferenceMLPModel
 from config_cc import *
 import numpy as np
-from utils import print_cm, eval_batch_prediction_cc, plot_cm, get_cm_path
-import json
 import argparse
 import os
-from sklearn.metrics import accuracy_score
-from pdb import set_trace as trace
 from tqdm import tqdm
 
 
@@ -18,8 +14,6 @@ def main(args):
     criterion = nn.CrossEntropyLoss()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     training_net = TrainingMLPModel(**mlp_params).to(device)
-    inference_net = InferenceMLPModel(**mlp_params).to(device)
-    inference_net.eval()
 
     optimizer = optim.Adam(training_net.parameters(), lr=3e-4)
 
@@ -35,21 +29,24 @@ def main(args):
 
     output_path = os.path.join('exps', args.exp_name)
     os.makedirs(output_path, exist_ok=True)
-    cur_ckpt_path = ckpt_path.format(args.exp_name)
+    cur_ckpt_path = ckpt_path.format(args.exp_name, '_and_atts' if WITH_ATTS else '', '{}')
     os.makedirs(os.path.dirname(cur_ckpt_path), exist_ok=True)
 
     for epoch in range(NUM_EPOCHS):
         for i, data in tqdm(enumerate(train_loader), total=len(train_loader), desc=f'Training epoch {epoch}'):
             inputs = data['descs'].float().to(device)
             num_descs = data['num_descs'].long().to(device)
-            labels = data['label'].squeeze().long().to(device)
+            obj_labels = data['obj_label'].squeeze().long().to(device)
+            att_labels = data['att_label'].squeeze().long().to(device) if WITH_ATTS else None
 
             # zero the parameter gradients
             optimizer.zero_grad()
 
             # forward + backward + optimize
-            outputs = training_net(inputs, num_descs, labels)
-            loss = criterion(outputs, labels)
+            obj_outputs, att_outputs = training_net(inputs, num_descs, obj_labels, att_labels)
+            loss = criterion(obj_outputs, obj_labels)
+            if WITH_ATTS:
+                loss += criterion(att_outputs, att_labels)
             loss.backward()
             optimizer.step()
 
@@ -59,22 +56,24 @@ def main(args):
 
         # perform validation
         running_val_loss = 0
-        inference_net.load_state_dict(training_net.state_dict())
+        torch.save(training_net.state_dict(), cur_ckpt_path.format(epoch))
 
         with torch.set_grad_enabled(False):
             for i, data in tqdm(enumerate(val_loader), total=len(val_loader), desc=f'Validation epoch {epoch}'):
                 inputs = data['descs'].float().to(device)
                 num_descs = data['num_descs'].long().to(device)
-                labels = data['label'].squeeze().long().to(device)
-                train_outputs = training_net(inputs, num_descs, labels)
-                running_val_loss += criterion(train_outputs, labels).item()
+                obj_labels = data['obj_label'].squeeze().long().to(device)
+                att_labels = data['att_label'].squeeze().long().to(device) if WITH_ATTS else None
+                obj_outputs, att_outputs = training_net(inputs, num_descs, obj_labels, att_labels)
+                running_val_loss += criterion(obj_outputs, obj_labels)
+                if WITH_ATTS:
+                    running_val_loss += criterion(att_outputs, att_labels).item()
 
             cur_val_loss = running_val_loss / NUM_VAL_EPOCHS
             print('Epoch %d Val loss: %.3f' % (epoch + 1, cur_val_loss))
             if best_val_loss > cur_val_loss:
                 best_val_loss = cur_val_loss
                 best_val_epoch = epoch
-                torch.save(training_net.state_dict(), cur_ckpt_path)
                 val_loader = get_dataloader('val')
             else:
                 if best_val_epoch + EARLY_STOPPING <= epoch:

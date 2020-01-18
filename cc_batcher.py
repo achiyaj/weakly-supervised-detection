@@ -73,17 +73,25 @@ def build_cc_relevant_data(gqa_only, num_objs, num_atts, dset):
 
 
 class MaxLossCCDataset(Dataset):
-    def __init__(self, gqa_only, num_objs, num_atts, dset, img_ids=None):
+    def __init__(self, gqa_only, num_objs, num_atts, dset, with_atts, img_ids=None):
+        self.with_atts = with_atts
         relevant_data_file = get_relevant_data_file(gqa_only, num_objs, num_atts, dset)
         if os.path.isfile(relevant_data_file):
             relevant_data = json.load(open(relevant_data_file, 'r'))
             self.objs = {relevant_data['relevant_objs'][i]: i for i in range(num_objs)}
             self.atts = {relevant_data['relevant_atts'][i]: i for i in range(num_atts)}
-            self.objs_data = relevant_data['objs_labels']
-            self.objs_and_atts_data = relevant_data['objs_and_atts_labels']
+            if self.with_atts:
+                self.data = relevant_data['objs_and_atts_labels']
+            else:
+                self.data = relevant_data['objs_labels']
+
         else:  # build the relevant dataset
-            self.objs, self.atts, self.objs_data, self.objs_and_atts_data = \
+            self.objs, self.atts, objs_data, objs_and_atts_data = \
                 build_cc_relevant_data(gqa_only, num_objs, num_atts, dset)
+            if self.with_atts:
+                self.data = objs_and_atts_data
+            else:
+                self.data = objs_data
 
         self.descriptors_env = lmdb.open(descriptors_file, subdir=False, readonly=True, lock=False, readahead=True,
                                          meminit=False)
@@ -96,11 +104,13 @@ class MaxLossCCDataset(Dataset):
             self.objs_and_atts_data = [x for x in self.objs_and_atts_data if x[0] in img_ids]
 
     def __len__(self):
-        # return len(self.objs_data) + len(self.objs_and_atts_data)
-        return len(self.objs_data)
+        return len(self.data)
 
     def __getitem__(self, idx):
-        line_id, obj_label = self.objs_data[idx]
+        if self.with_atts:
+            line_id, obj_label, att_label = self.data[idx]
+        else:
+            line_id, obj_label = self.data[idx]
         img_id = self.line_to_imgs_id[line_id].encode()
         raw_data = np.load(six.BytesIO(self.descriptors_curs.get(img_id)))
         data = raw_data.f.feat
@@ -109,9 +119,11 @@ class MaxLossCCDataset(Dataset):
         output = {
             'descs': data,
             'num_descs': num_descs,
-            'label': self.objs[obj_label],
+            'obj_label': self.objs[obj_label],
             'img_id': line_id
         }
+        if self.with_atts:
+            output['att_label'] = self.atts[att_label]
         return output
 
     def get_class_labels(self):
@@ -122,7 +134,7 @@ class MaxLossCCDataset(Dataset):
 
 
 def get_dataloader(dset, img_ids=None):
-    dataset = MaxLossCCDataset(GQA_LABELS_ONLY, NUM_TOP_OBJS, NUM_TOP_ATTS, dset, img_ids)
+    dataset = MaxLossCCDataset(GQA_LABELS_ONLY, NUM_TOP_OBJS, NUM_TOP_ATTS, dset, WITH_ATTS, img_ids)
     if dset == 'val':
         return DataLoader(dataset, **val_loader_params)
     return DataLoader(dataset, **train_loader_params)

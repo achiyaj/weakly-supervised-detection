@@ -12,41 +12,75 @@ class MLPModel(torch.nn.Module):
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
         self.fc3 = nn.Linear(hidden_dim, output_dim)
 
-
-class TrainingMLPModel(MLPModel):
-    def __init__(self, hidden_dim, input_dim, output_dim):
-        MLPModel.__init__(self, hidden_dim, input_dim, output_dim)
-
-    def forward(self, x, num_descs, labels):
+    def forward(self, x):
         output = F.relu(self.fc1(x))
         output = F.relu(self.fc2(output))
         output = F.softmax(self.fc3(output), dim=2)
-
-        unpadded_imgs = [output[i, :num_descs[i], :] for i in range(num_descs.shape[0])]
-
-        # list of best matching descriptors for each image's label
-        matching_descs_dists = []
-        for img_idx in range(x.shape[0]):
-            cur_label = labels[img_idx]
-            matching_desc_id = unpadded_imgs[img_idx][:, cur_label].argmax()
-            matching_descs_dists.append(unpadded_imgs[img_idx][matching_desc_id, :])
-
-        output = torch.stack(matching_descs_dists)
         return output
 
 
-class InferenceMLPModel(MLPModel):
-    def __init__(self, hidden_dim, input_dim, output_dim):
-        MLPModel.__init__(self, hidden_dim, input_dim, output_dim)
+class TrainingMLPModel(torch.nn.Module):
+    def __init__(self, hidden_dim, input_dim, objs_output_dim, atts_output_dim=0):
+        super(TrainingMLPModel, self).__init__()
+        self.objs_mlp = MLPModel(hidden_dim, input_dim, objs_output_dim)
+        if atts_output_dim > 0:
+            self.atts_mlp = MLPModel(hidden_dim, input_dim, atts_output_dim)
 
-    def forward(self, x, num_descs):
-        output = F.relu(self.fc1(x))
-        output = F.relu(self.fc2(output))
-        output = F.softmax(self.fc3(output), dim=2)
+    def forward(self, x, num_descs, obj_labels, att_labels=None):
+        objs_outputs = self.objs_mlp(x)
 
-        unpadded_imgs = [output[i, :num_descs[i], :] for i in range(num_descs.shape[0])]
-        unpadded_imgs = [x.detach().cpu().numpy() for x in unpadded_imgs]
-        pred_labels = [np.argmax(x, axis=1).tolist() for x in unpadded_imgs]
-        pred_probs = [np.max(x, axis=1).tolist() for x in unpadded_imgs]
+        unpadded_imgs_objs = [objs_outputs[i, :num_descs[i], :] for i in range(num_descs.shape[0])]
+        if att_labels is not None:
+            atts_outputs = self.atts_mlp(x)
+            unpadded_imgs_atts = [atts_outputs[i, :num_descs[i], :] for i in range(num_descs.shape[0])]
 
-        return pred_labels, pred_probs
+        # list of best matching descriptors for each image's label
+        matching_descs_obj_dists = []
+        matching_descs_att_dists = []
+        for img_idx in range(x.shape[0]):
+            cur_obj_label = obj_labels[img_idx]
+            matching_obj_probs = unpadded_imgs_objs[img_idx][:, cur_obj_label]
+            if att_labels is None:
+                matching_desc_id = matching_obj_probs.argmax()
+                matching_descs_obj_dists.append(unpadded_imgs_objs[img_idx][matching_desc_id, :])
+            else:
+                cur_att_label = att_labels[img_idx]
+                matching_att_probs = unpadded_imgs_atts[img_idx][:, cur_att_label]
+                matching_desc_id = (matching_obj_probs * matching_att_probs).argmax()
+                matching_descs_obj_dists.append(unpadded_imgs_objs[img_idx][matching_desc_id, :])
+                matching_descs_att_dists.append(unpadded_imgs_atts[img_idx][matching_desc_id, :])
+
+        obj_dists = torch.stack(matching_descs_obj_dists)
+        att_dists = None
+        if att_labels is not None:
+            att_dists = torch.stack(matching_descs_att_dists)
+        return obj_dists, att_dists
+
+
+class InferenceMLPModel(torch.nn.Module):
+    def __init__(self, hidden_dim, input_dim, objs_output_dim, atts_output_dim=0):
+        super(InferenceMLPModel, self).__init__()
+        self.objs_mlp = MLPModel(hidden_dim, input_dim, objs_output_dim)
+        self.predict_atts = False
+        if atts_output_dim > 0:
+            self.atts_mlp = MLPModel(hidden_dim, input_dim, atts_output_dim)
+            self.predict_atts = True
+
+    def forward(self, x, num_descs, predict_atts=False):
+        objs_outputs = self.objs_mlp(x)
+
+        def to_numpy(tensors_list):
+            return [tensor.detach().cpu().numpy() for tensor in tensors_list]
+
+        unpadded_imgs_objs = to_numpy([objs_outputs[i, :num_descs[i], :] for i in range(num_descs.shape[0])])
+        pred_obj_labels = [np.argmax(x, axis=1).tolist() for x in unpadded_imgs_objs]
+        pred_obj_probs = [np.max(x, axis=1).tolist() for x in unpadded_imgs_objs]
+        pred_att_labels, pred_att_probs = None, None
+
+        if self.predict_atts:
+            atts_outputs = self.atts_mlp(x)
+            unpadded_imgs_atts = to_numpy([atts_outputs[i, :num_descs[i], :] for i in range(num_descs.shape[0])])
+            pred_att_labels = [np.argmax(x, axis=1).tolist() for x in unpadded_imgs_atts]
+            pred_att_probs = [np.max(x, axis=1).tolist() for x in unpadded_imgs_atts]
+
+        return pred_obj_labels, pred_obj_probs, pred_att_labels, pred_att_probs

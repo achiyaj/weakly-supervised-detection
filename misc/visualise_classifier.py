@@ -27,9 +27,7 @@ REF_CONF_THRESH = 0.2
 
 ckpt_path = glob(ckpt_path.format(EXP_NAME))[-1]
 output_path = os.path.join(os.path.dirname(ckpt_path), 'imgs')
-# ref_output_path = os.path.join(os.path.dirname(ckpt_path), 'imgs_ref')
 os.makedirs(output_path, exist_ok=True)
-# os.makedirs(ref_output_path, exist_ok=True)
 ref_objects_detector_ckpt = '/specific/netapp5_2/gamir/achiya/vqa/misc/offline_classification/ckpts/objs_cc.h5'
 
 
@@ -50,7 +48,6 @@ class MLPModel(torch.nn.Module):
 def main():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     img_ids = None
-    # img_ids = ['61584', '2346590', '2357280', '2368559', '2400139', '2410441', '2410790', '2413051']
     if not img_ids:
         img_ids = sample(list(json.load(open(gqa_val_sgs)).keys()), NUM_IMGS_TO_TEST)
     ref_objects_dict = {value[0]: key for key, value in json.load(open(ref_objs_dict, 'r')).items()}
@@ -62,8 +59,9 @@ def main():
     ref_model.load_state_dict(torch.load(ref_objects_detector_ckpt))
     obj_labels = json.load(open(labels_path), object_pairs_hook=OrderedDict)['relevant_objs']
     obj_labels_dict = {i: obj_labels[i] for i in range(len(obj_labels))}
-    att_labels = json.load(open(labels_path), object_pairs_hook=OrderedDict)['relevant_atts']
-    att_labels_dict = {i: att_labels[i] for i in range(len(att_labels))}
+    if WITH_ATTS:
+        att_labels = json.load(open(labels_path), object_pairs_hook=OrderedDict)['relevant_atts']
+        att_labels_dict = {i: att_labels[i] for i in range(len(att_labels))}
 
     with h5py.File(gqa_data_file, 'r') as data_f, torch.set_grad_enabled(False):
         for img_id in img_ids:
@@ -76,14 +74,14 @@ def main():
                 model(tensor_features, np.array([features.shape[0]]))
             pred_obj_labels = pred_obj_labels[0]
             pred_obj_probs = pred_obj_probs[0]
-            pred_att_labels = pred_att_labels[0]
-            pred_att_probs = pred_att_probs[0]
+            if WITH_ATTS:
+                pred_att_labels = pred_att_labels[0]
+                pred_att_probs = pred_att_probs[0]
 
-            # relevant_bboxes_data = [(i, pred_labels[i]) for i in range(len(pred_probs)) if pred_probs[i] > CONF_THRESH]
             relevant_bboxes_data = []
             for i in range(len(pred_obj_labels)):
                 if pred_obj_probs[i] > OBJ_CONF_THRESH:
-                    if pred_att_probs[i] > ATT_CONF_THRESH:
+                    if WITH_ATTS and pred_att_probs[i] > ATT_CONF_THRESH:
                         relevant_bboxes_data.append(
                             (i, att_labels_dict[pred_att_labels[i]] + ' ' + obj_labels_dict[pred_obj_labels[i]]))
                     else:

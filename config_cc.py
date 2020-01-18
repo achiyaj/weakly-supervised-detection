@@ -5,7 +5,7 @@ gqa_objs_file = '/specific/netapp5_2/gamir/datasets/gqa/objects_dict.json'
 gqa_atts_file = '/specific/netapp5_2/gamir/datasets/gqa/attributes_dict.json'
 descriptors_file = '/specific/netapp5_2/gamir/achiya/Downloads/firefox_downloads/googlebu_att.lmdb'
 line_to_img_id_file = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/data_labels/{}_img_ids.json'
-ckpt_path = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/exps/cc/{}/objs_ckpts.pt'
+ckpt_path = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/exps/cc/{}/objs{}_ckpts_epoch_{}.pt'
 cc_metadata_path = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/data_labels/googletalk.json'
 
 
@@ -19,6 +19,7 @@ EARLY_STOPPING = 4
 PRINT_EVERY = 200
 VAL_EVERY = 200
 NUM_VAL_EPOCHS = 5
+WITH_ATTS = True
 
 train_loader_params = {'batch_size': 64,
                        'shuffle': False,
@@ -32,7 +33,8 @@ val_loader_params = {'batch_size': 64,
 
 mlp_params = {'hidden_dim': 256,
               'input_dim': 2048,
-              'output_dim': NUM_TOP_OBJS}
+              'objs_output_dim': NUM_TOP_OBJS,
+              'atts_output_dim': NUM_TOP_ATTS}
 
 
 def get_relevant_data_file(gqa_only, num_objs, num_atts, dset):
