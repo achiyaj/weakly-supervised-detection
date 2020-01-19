@@ -77,19 +77,19 @@ class MaxLossCCDataset(Dataset):
             relevant_data = json.load(open(relevant_data_file, 'r'))
             self.objs = {relevant_data['relevant_objs'][i]: i for i in range(num_objs)}
             self.atts = {relevant_data['relevant_atts'][i]: i for i in range(num_atts)}
+            self.data = relevant_data['objs_labels']
             if self.with_atts:
-                self.data = relevant_data['objs_and_atts_labels']
-            else:
-                self.data = relevant_data['objs_labels']
+                self.data += relevant_data['objs_and_atts_labels']
             self.max_num_objs_per_img = relevant_data['max_num_objs_per_image']
 
         else:  # build the relevant dataset
             self.objs, self.atts, objs_data, objs_and_atts_data = \
                 build_cc_relevant_data(gqa_only, num_objs, num_atts, dset)
+            self.data = objs_data
             if self.with_atts:
-                self.data = objs_and_atts_data
-            else:
-                self.data = objs_data
+                self.data += objs_and_atts_data
+
+        shuffle(self.data)
 
         self.descriptors_env = lmdb.open(descriptors_file, subdir=False, readonly=True, lock=False, readahead=True,
                                          meminit=False)
@@ -105,13 +105,15 @@ class MaxLossCCDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, idx):
-        if self.with_atts:
+        line_id, labels = self.data[idx]
+        att_label_present = (type(labels[0]) == list)
+        if att_label_present:  # this is an object only label
             line_id, objs_and_atts_labels = self.data[idx]
-            obj_labels = [x[0] for x in objs_and_atts_labels]
-            att_labels = [x[1] for x in objs_and_atts_labels]
-            num_labels = len(objs_and_atts_labels)
-        else:
-            line_id, obj_labels = self.data[idx]
+            obj_labels = [x[0] for x in labels]
+            att_labels = [x[1] for x in labels]
+            num_labels = len(labels)
+        else:  # this is object + attribute labels
+            obj_labels = labels
             num_labels = len(obj_labels)
         img_id = self.line_to_imgs_id[line_id].encode()
         raw_data = np.load(six.BytesIO(self.descriptors_curs.get(img_id)))
@@ -124,8 +126,11 @@ class MaxLossCCDataset(Dataset):
             'img_id': line_id,
             'num_labels_per_image': num_labels
         }
-        if self.with_atts:
+        if att_label_present:
             output['att_labels'] = [self.atts[x] for x in att_labels]
+        else:
+            output['att_labels'] = [-1] * len(obj_labels)
+
         return output
 
     def get_class_labels(self):

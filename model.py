@@ -40,17 +40,14 @@ class TrainingMLPModel(torch.nn.Module):
         total_labels_count = 0
         for img_idx in range(x.shape[0]):
             for label_id in range(num_labels_per_img[img_idx]):
-                try:
-                    cur_obj_label = obj_labels[total_labels_count]
-                except:
-                    import pdb; pdb.set_trace()
-                    abc = 123
+                cur_obj_label = obj_labels[total_labels_count]
+                cur_att_label = att_labels[total_labels_count]
                 matching_obj_probs = unpadded_imgs_objs[img_idx][:, cur_obj_label]
-                if att_labels is None:
+
+                if cur_att_label == -1:
                     matching_desc_id = matching_obj_probs.argmax()
                     matching_descs_obj_dists.append(unpadded_imgs_objs[img_idx][matching_desc_id, :])
                 else:
-                    cur_att_label = att_labels[total_labels_count]
                     matching_att_probs = unpadded_imgs_atts[img_idx][:, cur_att_label]
                     matching_desc_id = (matching_obj_probs * matching_att_probs).argmax()
                     matching_descs_obj_dists.append(unpadded_imgs_objs[img_idx][matching_desc_id, :])
@@ -60,7 +57,7 @@ class TrainingMLPModel(torch.nn.Module):
 
         obj_dists = torch.stack(matching_descs_obj_dists)
         att_dists = None
-        if att_labels is not None:
+        if len(matching_descs_att_dists) > 0:
             att_dists = torch.stack(matching_descs_att_dists)
         return obj_dists, att_dists
 

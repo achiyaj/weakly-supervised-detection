@@ -38,6 +38,7 @@ def main(args):
             num_descs = data['num_descs'].long().to(device)
             obj_labels = data['obj_labels'].long().to(device)
             att_labels = data['att_labels'].squeeze().long().to(device) if WITH_ATTS else None
+            att_labels_packed = att_labels[att_labels != -1]
             num_labels_per_image = data['num_labels_per_image']
 
             # zero the parameter gradients
@@ -46,8 +47,8 @@ def main(args):
             # forward + backward + optimize
             obj_outputs, att_outputs = training_net(inputs, num_descs, num_labels_per_image, obj_labels, att_labels)
             loss = criterion(obj_outputs, obj_labels)
-            if WITH_ATTS:
-                loss += criterion(att_outputs, att_labels)
+            if att_outputs is not None:
+                loss += criterion(att_outputs, att_labels_packed)
             loss.backward()
             optimizer.step()
 
@@ -67,11 +68,12 @@ def main(args):
                 num_descs = data['num_descs'].long().to(device)
                 obj_labels = data['obj_labels'].long().to(device)
                 att_labels = data['att_labels'].squeeze().long().to(device) if WITH_ATTS else None
+                att_labels_packed = att_labels[att_labels != -1]
                 num_labels_per_image = data['num_labels_per_image']
                 obj_outputs, att_outputs = training_net(inputs, num_descs, num_labels_per_image, obj_labels, att_labels)
                 running_val_loss += criterion(obj_outputs, obj_labels)
-                if WITH_ATTS:
-                    running_val_loss += criterion(att_outputs, att_labels).item()
+                if att_outputs is not None:
+                    running_val_loss += criterion(att_outputs, att_labels_packed).item()
 
             cur_val_loss = running_val_loss / NUM_VAL_EPOCHS
             print('Epoch %d Val loss: %.3f' % (epoch + 1, cur_val_loss))
