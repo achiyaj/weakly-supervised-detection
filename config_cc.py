@@ -8,7 +8,6 @@ line_to_img_id_file = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/dat
 ckpt_path = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/exps/cc/{}/objs{}_ckpts_epoch_{}.pt'
 cc_metadata_path = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/data_labels/googletalk.json'
 
-
 NUM_TOP_OBJS = 50
 NUM_TOP_ATTS = 50
 GQA_LABELS_ONLY = True
@@ -20,6 +19,7 @@ PRINT_EVERY = 200
 VAL_EVERY = 200
 NUM_VAL_EPOCHS = 5
 WITH_ATTS = True
+DEBUG = False
 
 train_loader_params = {'batch_size': 64,
                        'shuffle': False,

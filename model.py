@@ -26,7 +26,7 @@ class TrainingMLPModel(torch.nn.Module):
         if atts_output_dim > 0:
             self.atts_mlp = MLPModel(hidden_dim, input_dim, atts_output_dim)
 
-    def forward(self, x, num_descs, obj_labels, att_labels=None):
+    def forward(self, x, num_descs, num_labels_per_img, obj_labels, att_labels=None):
         objs_outputs = self.objs_mlp(x)
 
         unpadded_imgs_objs = [objs_outputs[i, :num_descs[i], :] for i in range(num_descs.shape[0])]
@@ -37,18 +37,26 @@ class TrainingMLPModel(torch.nn.Module):
         # list of best matching descriptors for each image's label
         matching_descs_obj_dists = []
         matching_descs_att_dists = []
+        total_labels_count = 0
         for img_idx in range(x.shape[0]):
-            cur_obj_label = obj_labels[img_idx]
-            matching_obj_probs = unpadded_imgs_objs[img_idx][:, cur_obj_label]
-            if att_labels is None:
-                matching_desc_id = matching_obj_probs.argmax()
-                matching_descs_obj_dists.append(unpadded_imgs_objs[img_idx][matching_desc_id, :])
-            else:
-                cur_att_label = att_labels[img_idx]
-                matching_att_probs = unpadded_imgs_atts[img_idx][:, cur_att_label]
-                matching_desc_id = (matching_obj_probs * matching_att_probs).argmax()
-                matching_descs_obj_dists.append(unpadded_imgs_objs[img_idx][matching_desc_id, :])
-                matching_descs_att_dists.append(unpadded_imgs_atts[img_idx][matching_desc_id, :])
+            for label_id in range(num_labels_per_img[img_idx]):
+                try:
+                    cur_obj_label = obj_labels[total_labels_count]
+                except:
+                    import pdb; pdb.set_trace()
+                    abc = 123
+                matching_obj_probs = unpadded_imgs_objs[img_idx][:, cur_obj_label]
+                if att_labels is None:
+                    matching_desc_id = matching_obj_probs.argmax()
+                    matching_descs_obj_dists.append(unpadded_imgs_objs[img_idx][matching_desc_id, :])
+                else:
+                    cur_att_label = att_labels[total_labels_count]
+                    matching_att_probs = unpadded_imgs_atts[img_idx][:, cur_att_label]
+                    matching_desc_id = (matching_obj_probs * matching_att_probs).argmax()
+                    matching_descs_obj_dists.append(unpadded_imgs_objs[img_idx][matching_desc_id, :])
+                    matching_descs_att_dists.append(unpadded_imgs_atts[img_idx][matching_desc_id, :])
+
+                total_labels_count += 1
 
         obj_dists = torch.stack(matching_descs_obj_dists)
         att_dists = None

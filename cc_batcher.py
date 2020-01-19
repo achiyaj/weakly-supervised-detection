@@ -8,12 +8,7 @@ import numpy as np
 from collections import OrderedDict
 import lmdb
 import six
-
-
-def pad_descriptors(data):
-    output = np.zeros((MAX_NUM_OBJS, DESCRIPTORS_DIM))
-    output[:data.shape[0], :] = data
-    return output
+import torch
 
 
 def build_cc_relevant_data(gqa_only, num_objs, num_atts, dset):
@@ -53,17 +48,19 @@ def build_cc_relevant_data(gqa_only, num_objs, num_atts, dset):
         relevant_objs_and_atts = \
             [(x['label'], att) for x in relevant_objs for att in x['attributes'] if att in cc_relevant_atts]
         if len(relevant_objs) > 0:
-            relevant_dset_objs += [(sg_id, x['label']) for x in relevant_objs]
+            relevant_dset_objs.append((sg_id, [x['label'] for x in relevant_objs]))
         if len(relevant_objs_and_atts) > 0:
-            relevant_dset_objs_and_atts += [(sg_id, x[0], x[1]) for x in relevant_objs_and_atts]
+            relevant_dset_objs_and_atts.append((sg_id, [(x[0], x[1]) for x in relevant_objs_and_atts]))
 
         dset_data_file = get_relevant_data_file(gqa_only, num_objs, num_atts, dset)
+    max_num_objs_per_image = max([len(x[1]) for x in relevant_dset_objs + relevant_dset_objs_and_atts])
 
     final_data = {
         'relevant_objs': cc_relevant_objs,
         'relevant_atts': cc_relevant_atts,
         'objs_labels': relevant_dset_objs,
-        'objs_and_atts_labels': relevant_dset_objs_and_atts
+        'objs_and_atts_labels': relevant_dset_objs_and_atts,
+        'max_num_objs_per_image': max_num_objs_per_image
     }
 
     with open(dset_data_file, 'w') as out_f:
@@ -84,6 +81,7 @@ class MaxLossCCDataset(Dataset):
                 self.data = relevant_data['objs_and_atts_labels']
             else:
                 self.data = relevant_data['objs_labels']
+            self.max_num_objs_per_img = relevant_data['max_num_objs_per_image']
 
         else:  # build the relevant dataset
             self.objs, self.atts, objs_data, objs_and_atts_data = \
@@ -108,26 +106,51 @@ class MaxLossCCDataset(Dataset):
 
     def __getitem__(self, idx):
         if self.with_atts:
-            line_id, obj_label, att_label = self.data[idx]
+            line_id, objs_and_atts_labels = self.data[idx]
+            obj_labels = [x[0] for x in objs_and_atts_labels]
+            att_labels = [x[1] for x in objs_and_atts_labels]
+            num_labels = len(objs_and_atts_labels)
         else:
-            line_id, obj_label = self.data[idx]
+            line_id, obj_labels = self.data[idx]
+            num_labels = len(obj_labels)
         img_id = self.line_to_imgs_id[line_id].encode()
         raw_data = np.load(six.BytesIO(self.descriptors_curs.get(img_id)))
         data = raw_data.f.feat
         num_descs = data.shape[0]
-        data = pad_descriptors(data)
         output = {
             'descs': data,
             'num_descs': num_descs,
-            'obj_label': self.objs[obj_label],
-            'img_id': line_id
+            'obj_labels': [self.objs[x] for x in obj_labels],
+            'img_id': line_id,
+            'num_labels_per_image': num_labels
         }
         if self.with_atts:
-            output['att_label'] = self.atts[att_label]
+            output['att_labels'] = [self.atts[x] for x in att_labels]
         return output
 
     def get_class_labels(self):
         return self.objs
+
+    @staticmethod
+    def pad_collate(batch):
+        output = {}
+        # pad object descriptors
+        descs = [x['descs'] for x in batch]
+        padded_descs = [np.concatenate((x, np.zeros((MAX_NUM_OBJS - x.shape[0], DESCRIPTORS_DIM)))) for x in descs]
+        output['descs'] = torch.Tensor(np.stack(padded_descs))
+
+        # pad object labels
+        obj_labels = [x['obj_labels'] for x in batch]
+        output['obj_labels'] = torch.Tensor([x for img_labels in obj_labels for x in img_labels])
+        if 'att_labels' in batch[0]:
+            att_labels = [x['att_labels'] for x in batch]
+            output['att_labels'] = torch.Tensor([x for img_labels in att_labels for x in img_labels])
+
+        # other data fields
+        output['img_id'] = [x['img_id'] for x in batch]
+        output['num_labels_per_image'] = [x['num_labels_per_image'] for x in batch]
+        output['num_descs'] = torch.Tensor([x['num_descs'] for x in batch])
+        return output
 
     def __del__(self):
         self.descriptors_env.close()
@@ -136,5 +159,5 @@ class MaxLossCCDataset(Dataset):
 def get_dataloader(dset, img_ids=None):
     dataset = MaxLossCCDataset(GQA_LABELS_ONLY, NUM_TOP_OBJS, NUM_TOP_ATTS, dset, WITH_ATTS, img_ids)
     if dset == 'val':
-        return DataLoader(dataset, **val_loader_params)
-    return DataLoader(dataset, **train_loader_params)
+        return DataLoader(dataset, **val_loader_params, collate_fn=dataset.pad_collate)
+    return DataLoader(dataset, **train_loader_params, collate_fn=dataset.pad_collate)

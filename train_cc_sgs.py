@@ -36,14 +36,15 @@ def main(args):
         for i, data in tqdm(enumerate(train_loader), total=len(train_loader), desc=f'Training epoch {epoch}'):
             inputs = data['descs'].float().to(device)
             num_descs = data['num_descs'].long().to(device)
-            obj_labels = data['obj_label'].squeeze().long().to(device)
-            att_labels = data['att_label'].squeeze().long().to(device) if WITH_ATTS else None
+            obj_labels = data['obj_labels'].long().to(device)
+            att_labels = data['att_labels'].squeeze().long().to(device) if WITH_ATTS else None
+            num_labels_per_image = data['num_labels_per_image']
 
             # zero the parameter gradients
             optimizer.zero_grad()
 
             # forward + backward + optimize
-            obj_outputs, att_outputs = training_net(inputs, num_descs, obj_labels, att_labels)
+            obj_outputs, att_outputs = training_net(inputs, num_descs, num_labels_per_image, obj_labels, att_labels)
             loss = criterion(obj_outputs, obj_labels)
             if WITH_ATTS:
                 loss += criterion(att_outputs, att_labels)
@@ -53,6 +54,8 @@ def main(args):
             # print statistics
             if i % PRINT_EVERY == PRINT_EVERY - 1:  # print every N mini-batches
                 print('[%d, %5d] Train loss: %.3f' % (epoch + 1, i + 1, loss.item()))
+                if DEBUG:
+                    break
 
         # perform validation
         running_val_loss = 0
@@ -62,9 +65,10 @@ def main(args):
             for i, data in tqdm(enumerate(val_loader), total=len(val_loader), desc=f'Validation epoch {epoch}'):
                 inputs = data['descs'].float().to(device)
                 num_descs = data['num_descs'].long().to(device)
-                obj_labels = data['obj_label'].squeeze().long().to(device)
-                att_labels = data['att_label'].squeeze().long().to(device) if WITH_ATTS else None
-                obj_outputs, att_outputs = training_net(inputs, num_descs, obj_labels, att_labels)
+                obj_labels = data['obj_labels'].long().to(device)
+                att_labels = data['att_labels'].squeeze().long().to(device) if WITH_ATTS else None
+                num_labels_per_image = data['num_labels_per_image']
+                obj_outputs, att_outputs = training_net(inputs, num_descs, num_labels_per_image, obj_labels, att_labels)
                 running_val_loss += criterion(obj_outputs, obj_labels)
                 if WITH_ATTS:
                     running_val_loss += criterion(att_outputs, att_labels).item()
