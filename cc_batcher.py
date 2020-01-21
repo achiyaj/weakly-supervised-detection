@@ -12,8 +12,10 @@ import torch
 
 
 def build_cc_relevant_data(gqa_only, num_objs, num_atts, dset):
-    cc_objs = list(json.load(open(cc_freqs_path.format('objs'), 'r'), object_pairs_hook=OrderedDict).keys())
-    cc_atts = list(json.load(open(cc_freqs_path.format('atts'), 'r'), object_pairs_hook=OrderedDict).keys())
+    cc_obj_freqs = json.load(open(cc_freqs_path.format('objs'), 'r'), object_pairs_hook=OrderedDict)
+    cc_att_freqs = json.load(open(cc_freqs_path.format('atts'), 'r'), object_pairs_hook=OrderedDict)
+    cc_objs = list(cc_obj_freqs.keys())
+    cc_atts = list(cc_att_freqs.keys())
     gqa_objs = list(json.load(open(gqa_objs_file, 'r')).keys())
     gqa_atts = list(json.load(open(gqa_atts_file, 'r')).keys())
     cc_relevant_objs, cc_relevant_atts = [], []
@@ -75,8 +77,10 @@ class MaxLossCCDataset(Dataset):
         relevant_data_file = get_relevant_data_file(gqa_only, num_objs, num_atts, dset)
         if os.path.isfile(relevant_data_file):
             relevant_data = json.load(open(relevant_data_file, 'r'))
-            self.objs = {relevant_data['relevant_objs'][i]: i for i in range(num_objs)}
-            self.atts = {relevant_data['relevant_atts'][i]: i for i in range(num_atts)}
+            relevant_objs = relevant_data['relevant_objs']
+            relevant_atts = relevant_data['relevant_atts']
+            self.objs = {relevant_objs[i]: i for i in range(min(num_objs, len(relevant_objs)))}
+            self.atts = {relevant_atts[i]: i for i in range(min(num_atts, len(relevant_atts)))}
             self.data = relevant_data['objs_labels']
             if self.with_atts:
                 self.data += relevant_data['objs_and_atts_labels']
@@ -103,6 +107,12 @@ class MaxLossCCDataset(Dataset):
 
     def __len__(self):
         return len(self.data)
+
+    def get_num_objs(self):
+        return len(self.objs)
+
+    def get_num_atts(self):
+        return len(self.atts)
 
     def __getitem__(self, idx):
         line_id, labels = self.data[idx]

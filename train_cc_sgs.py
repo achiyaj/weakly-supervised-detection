@@ -11,15 +11,14 @@ from tqdm import tqdm
 
 
 def main(args):
-    criterion = nn.CrossEntropyLoss()
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    training_net = TrainingMLPModel(**mlp_params).to(device)
-
-    optimizer = optim.Adam(training_net.parameters(), lr=3e-4)
-
     train_loader = get_dataloader('train')
     val_loader = get_dataloader('val')
+    criterion = nn.CrossEntropyLoss()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    training_net = TrainingMLPModel(**mlp_params, objs_output_dim=train_loader.dataset.get_num_objs(),
+                                    atts_output_dim=train_loader.dataset.get_num_atts()).to(device)
 
+    optimizer = optim.Adam(training_net.parameters(), lr=3e-4)
     best_val_loss = np.inf
     best_val_epoch = 0
     num_val_batches = len(val_loader)

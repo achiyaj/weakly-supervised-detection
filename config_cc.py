@@ -8,8 +8,8 @@ line_to_img_id_file = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/dat
 ckpt_path = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/exps/cc/{}/objs{}_ckpts_epoch_{}.pt'
 cc_metadata_path = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/data_labels/googletalk.json'
 
-NUM_TOP_OBJS = 50
-NUM_TOP_ATTS = 50
+NUM_TOP_OBJS = 10000
+NUM_TOP_ATTS = 10000
 GQA_LABELS_ONLY = True
 MAX_NUM_OBJS = 100
 DESCRIPTORS_DIM = 2048
@@ -23,7 +23,7 @@ DEBUG = False
 
 train_loader_params = {'batch_size': 64,
                        'shuffle': False,
-                       'num_workers': 8,
+                       'num_workers': 16,
                        'drop_last': True}
 
 val_loader_params = {'batch_size': 64,
@@ -32,9 +32,7 @@ val_loader_params = {'batch_size': 64,
                      'drop_last': True}
 
 mlp_params = {'hidden_dim': 256,
-              'input_dim': 2048,
-              'objs_output_dim': NUM_TOP_OBJS,
-              'atts_output_dim': NUM_TOP_ATTS}
+              'input_dim': 2048}
 
 
 def get_relevant_data_file(gqa_only, num_objs, num_atts, dset):
