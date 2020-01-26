@@ -4,7 +4,7 @@ import numpy as np
 from tqdm import tqdm
 from pdb import set_trace as trace
 
-from config_gqa import *
+from model.config_gqa import *
 
 
 FERATURES_INPUT_FILE = '/specific/netapp5_2/gamir/datasets/gqa/orig_features_our_format_all.h5'
@@ -45,6 +45,22 @@ def get_objs_bboxes_from_sg(sg, obj_name_to_idx, relevant_obj_labels):
         return np.stack(all_coords), labels
     return None, None
 
+
+def get_objs_and_atts_bboxes_from_sg(sg, relevant_obj_labels, relevant_att_labels):
+    all_coords = []
+    labels = []
+    for obj_id, obj_data in enumerate(sg['objects'].values()):
+        obj_name = obj_data['name']
+        if obj_name not in relevant_obj_labels:
+            continue
+        x1, y1 = obj_data['x'], obj_data['y']
+        x2, y2 = x1 + obj_data['w'], y1 + obj_data['h']
+        all_coords.append(np.array([x1, y1, x2, y2], dtype=np.float32))
+        obj_atts = [x for x in obj_data['attributes'] if x in relevant_att_labels]
+        labels.append((obj_name, obj_atts))
+    if len(all_coords) > 0:
+        return np.stack(all_coords), labels
+    return None, None
 
 
 def overlaps_graph(boxes1, boxes2):
@@ -88,6 +104,21 @@ def align_bboxes(detected_bboxes, gt_bboxes):
     return alignment_dict
 
 
+def get_objs_and_atts_datasets(relevant_obj_labels, relevant_att_labels, dset):
+    bboxes_file = h5py.File(FERATURES_INPUT_FILE, 'r')
+    dset_alignment_dict = {}
+    dset_sgs = json.load(open(SGS_FILE.format(dset), 'r'))
+    for img_id, cur_sg in tqdm(list(dset_sgs.items()), desc='Building dataset for {} set'.format(dset)):
+        obj_gt_bboxes, labels = get_objs_and_atts_bboxes_from_sg(cur_sg, relevant_obj_labels, relevant_att_labels)
+        if obj_gt_bboxes is None:
+            continue
+        cur_detected_bboxes = bboxes_file['bboxes_' + img_id][()]
+        alignment_dict = align_bboxes(cur_detected_bboxes, obj_gt_bboxes)
+        detected_box_to_label = {value[0]: labels[key] for key, value in alignment_dict.items()}
+        dset_alignment_dict[img_id] = detected_box_to_label
+
+    return dset_alignment_dict
+
 def build_objs_datasets():
     objs = {key: value[0] for key, value in json.load(open(OBJS_FILE, 'r')).items()}
     bboxes_file = h5py.File(FERATURES_INPUT_FILE, 'r')
@@ -97,8 +128,7 @@ def build_objs_datasets():
     obj_old_id_to_name = {value[0]: key for key, value in json.load(open(obj_orig_id_to_name_file, 'r')).items()}
     obj_old_id_to_new_id = {key: obj_name_to_new_id[value] for key, value in obj_old_id_to_name.items()
                             if value in obj_name_to_new_id.keys()}
-    # for dset in ['train', 'val']:
-    for dset in ['val']:
+    for dset in ['train', 'val']:
         dset_alignment_dict = {}
         dset_sgs = json.load(open(SGS_FILE.format(dset), 'r'))
         for img_id, cur_sg in tqdm(list(dset_sgs.items()), desc='Building dataset for {} set'.format(dset)):
@@ -149,7 +179,7 @@ def build_atts_datasets():
 
 
 def main():
-    # build_atts_datasets()
+    build_atts_datasets()
     build_objs_datasets()
 
 
