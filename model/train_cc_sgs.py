@@ -46,11 +46,11 @@ def main(args):
     # cc_val_loader = get_cc_dataloader('val')
     obj_labels = cc_train_loader.dataset.get_obj_labels()
     att_labels = cc_train_loader.dataset.get_att_labels()
-    if GQA_OVEERSAMPLING_RATE > 0:
+    if GQA_OVERSAMPLING_RATE > 0:
         gqa_train_loader = get_gqa_dataloader(obj_labels, att_labels, 'train')
         gqa_val_loader = get_gqa_dataloader(obj_labels, att_labels, 'val')
 
-    train_multiloader = MultiLoader([cc_train_loader, gqa_train_loader], [1, GQA_OVEERSAMPLING_RATE])
+    train_multiloader = MultiLoader([cc_train_loader, gqa_train_loader], sampling_rates)
     criterion = nn.CrossEntropyLoss()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     training_net = TrainingMLPModel(**mlp_params, objs_output_dim=len(obj_labels), atts_output_dim=len(att_labels))\
@@ -92,7 +92,7 @@ def main(args):
             if best_val_loss > cur_val_loss:
                 best_val_loss = cur_val_loss
                 best_val_epoch = epoch
-                gqa_val_loader = get_gqa_dataloader('val')
+                gqa_val_loader = get_gqa_dataloader(obj_labels, att_labels, 'val')
             else:
                 if best_val_epoch + EARLY_STOPPING <= epoch:
                     print('Early stopping after {} epochs'.format(epoch))

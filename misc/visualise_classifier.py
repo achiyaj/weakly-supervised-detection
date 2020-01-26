@@ -19,17 +19,18 @@ from tqdm import tqdm
 
 gqa_val_sgs = '/specific/netapp5_2/gamir/datasets/gqa/raw_data/val_sceneGraphs.json'
 gqa_data_file = '/specific/netapp5_2/gamir/datasets/gqa/orig_features_our_format_all.h5'
-ckpt_path = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/exps/cc/{}/*.pt'
+ckpt_path = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/exps/cc/{}/*_epoch_{}.pt'
 imgs_path = '/specific/netapp5_2/gamir/datasets/gqa/images/{}.jpg'
 labels_path = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/data/cc/top_gqa_50_objs_50_atts_data_val.json'
 ref_objs_dict = '/specific/netapp5_2/gamir/datasets/gqa/objects_dict.json'
 NUM_IMGS_TO_TEST = 20
 EXP_NAME = 'cc_objs_and_atts'
+BEST_VAL_EPOCH = 0
 OBJ_CONF_THRESH = 0.8
 ATT_CONF_THRESH = 0.8
 REF_CONF_THRESH = 0.2
 
-ckpt_path = glob(ckpt_path.format(EXP_NAME))[-1]
+ckpt_path = glob(ckpt_path.format(EXP_NAME, BEST_VAL_EPOCH))[-1]
 output_path = os.path.join(os.path.dirname(ckpt_path), 'imgs')
 os.makedirs(output_path, exist_ok=True)
 ref_objects_detector_ckpt = '/specific/netapp5_2/gamir/achiya/vqa/misc/offline_classification/ckpts/objs_cc.h5'
@@ -89,6 +90,8 @@ def main():
 
             relevant_bboxes_data = []
             for i in range(len(pred_obj_labels)):
+                if obj_labels_dict[pred_obj_labels[i]] == 'BACKGROUND':
+                    continue
                 if pred_obj_probs[i] > OBJ_CONF_THRESH:
                     if WITH_ATTS and pred_att_probs[i] > ATT_CONF_THRESH:
                         relevant_bboxes_data.append(

@@ -123,7 +123,6 @@ def build_objs_datasets():
     objs = {key: value[0] for key, value in json.load(open(OBJS_FILE, 'r')).items()}
     bboxes_file = h5py.File(FERATURES_INPUT_FILE, 'r')
     relevant_obj_labels = json.load(open(obj_new_id_to_name_file, 'r')).keys()
-    # obj_name_to_new_id = {value: key for key, value in json.load(open(obj_new_id_to_name_file, 'r')).items()}
     obj_name_to_new_id = json.load(open(obj_new_id_to_name_file, 'r'))
     obj_old_id_to_name = {value[0]: key for key, value in json.load(open(obj_orig_id_to_name_file, 'r')).items()}
     obj_old_id_to_new_id = {key: obj_name_to_new_id[value] for key, value in obj_old_id_to_name.items()

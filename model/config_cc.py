@@ -9,6 +9,7 @@ gqa_descriptors_file = '/specific/netapp5_2/gamir/datasets/gqa/orig_features_our
 line_to_img_id_file = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/data_labels/{}_img_ids.json'
 ckpt_path = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/exps/cc/{}/objs{}_ckpts_epoch_{}.pt'
 cc_metadata_path = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/data_labels/googletalk.json'
+ATT_CATEGORIES_FILE = '/specific/netapp5_2/gamir/datasets/gqa/raw_data/att_categories.json'
 
 NUM_TOP_OBJS = 10000
 NUM_TOP_ATTS = 10000
@@ -20,9 +21,13 @@ EARLY_STOPPING = 4
 PRINT_EVERY = 200
 VAL_EVERY = 200
 NUM_VAL_EPOCHS = 5
-GQA_OVEERSAMPLING_RATE = 3
+GQA_OVERSAMPLING_RATE = 1
+CC_OVERSAMPLING_RATE = 0
+USE_ATT_CATEGORIES = True
 WITH_ATTS = True
 DEBUG = False
+CATEGORIES_TO_DROP = ['hposition', 'place', 'realism', 'room', 'texture', 'vposition', 'company', 'depth', 'flavor',
+                      'race', 'location', 'hardness', 'gender', 'brightness']
 
 cc_train_loader_params = {'batch_size': 64,
                           'shuffle': True,
@@ -41,6 +46,8 @@ val_loader_params = {'batch_size': 64,
 
 mlp_params = {'hidden_dim': 256,
               'input_dim': 2048}
+
+sampling_rates = [CC_OVERSAMPLING_RATE, GQA_OVERSAMPLING_RATE]
 
 
 def get_relevant_data_file(gqa_only, num_objs, num_atts, dset, add_gqa):

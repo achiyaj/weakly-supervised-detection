@@ -188,7 +188,7 @@ class MaxLossCCDataset(Dataset):
 
 
 def get_cc_dataloader(dset, img_ids=None):
-    dataset = MaxLossCCDataset(GQA_LABELS_ONLY, NUM_TOP_OBJS, NUM_TOP_ATTS, dset, WITH_ATTS, GQA_OVEERSAMPLING_RATE > 0,
+    dataset = MaxLossCCDataset(GQA_LABELS_ONLY, NUM_TOP_OBJS, NUM_TOP_ATTS, dset, WITH_ATTS, GQA_OVERSAMPLING_RATE > 0,
                                img_ids)
     if dset == 'val':
         return DataLoader(dataset, **val_loader_params, collate_fn=dataset.pad_collate)

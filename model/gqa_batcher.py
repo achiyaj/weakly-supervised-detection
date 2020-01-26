@@ -91,7 +91,7 @@ class GQAWithAttsDataset(Dataset):
 
 
 def get_gqa_dataloader(objs, atts, dset):
-    dataset = GQAWithAttsDataset(objs, atts, dset, GQA_OVEERSAMPLING_RATE)
+    dataset = GQAWithAttsDataset(objs, atts, dset, GQA_OVERSAMPLING_RATE)
     if dset == 'val':
         return DataLoader(dataset, **val_loader_params, collate_fn=dataset.pad_collate)
     return DataLoader(dataset, **gqa_train_loader_params, collate_fn=dataset.pad_collate)
