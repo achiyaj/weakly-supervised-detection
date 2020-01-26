@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from config_gqa import *
 import numpy as np
 
 
@@ -26,6 +25,18 @@ class TrainingMLPModel(torch.nn.Module):
         if atts_output_dim > 0:
             self.atts_mlp = MLPModel(hidden_dim, input_dim, atts_output_dim)
 
+    @staticmethod
+    def collate_loss(preds, labels, num_descs, criterion):
+        loss = 0
+        for img_idx, num_img_descs in enumerate(num_descs):
+            relevant_labels = labels[img_idx, :num_img_descs]
+            relevant_preds = preds[img_idx, :num_img_descs, :]
+            labels_mask = [i for i in range(len(relevant_labels)) if relevant_labels[i] != -1]
+            if len(labels_mask) > 0:
+                loss += criterion(relevant_preds[labels_mask], relevant_labels[labels_mask])
+
+        return loss
+
     def forward(self, x, num_descs, num_labels_per_img, obj_labels, att_labels=None):
         objs_outputs = self.objs_mlp(x)
 
@@ -38,28 +49,32 @@ class TrainingMLPModel(torch.nn.Module):
         matching_descs_obj_dists = []
         matching_descs_att_dists = []
         total_labels_count = 0
-        for img_idx in range(x.shape[0]):
-            for label_id in range(num_labels_per_img[img_idx]):
-                cur_obj_label = obj_labels[total_labels_count]
-                cur_att_label = att_labels[total_labels_count]
-                matching_obj_probs = unpadded_imgs_objs[img_idx][:, cur_obj_label]
+        is_strong_supervision = (num_labels_per_img[0] is None)
+        if is_strong_supervision:
+            return objs_outputs, atts_outputs
+        else:
+            for img_idx in range(x.shape[0]):
+                for label_id in range(num_labels_per_img[img_idx]):
+                    cur_obj_label = obj_labels[total_labels_count]
+                    cur_att_label = att_labels[total_labels_count]
+                    matching_obj_probs = unpadded_imgs_objs[img_idx][:, cur_obj_label]
 
-                if cur_att_label == -1:
-                    matching_desc_id = matching_obj_probs.argmax()
-                    matching_descs_obj_dists.append(unpadded_imgs_objs[img_idx][matching_desc_id, :])
-                else:
-                    matching_att_probs = unpadded_imgs_atts[img_idx][:, cur_att_label]
-                    matching_desc_id = (matching_obj_probs * matching_att_probs).argmax()
-                    matching_descs_obj_dists.append(unpadded_imgs_objs[img_idx][matching_desc_id, :])
-                    matching_descs_att_dists.append(unpadded_imgs_atts[img_idx][matching_desc_id, :])
+                    if cur_att_label == -1:
+                        matching_desc_id = matching_obj_probs.argmax()
+                        matching_descs_obj_dists.append(unpadded_imgs_objs[img_idx][matching_desc_id, :])
+                    else:
+                        matching_att_probs = unpadded_imgs_atts[img_idx][:, cur_att_label]
+                        matching_desc_id = (matching_obj_probs * matching_att_probs).argmax()
+                        matching_descs_obj_dists.append(unpadded_imgs_objs[img_idx][matching_desc_id, :])
+                        matching_descs_att_dists.append(unpadded_imgs_atts[img_idx][matching_desc_id, :])
 
-                total_labels_count += 1
+                    total_labels_count += 1
 
-        obj_dists = torch.stack(matching_descs_obj_dists)
-        att_dists = None
-        if len(matching_descs_att_dists) > 0:
-            att_dists = torch.stack(matching_descs_att_dists)
-        return obj_dists, att_dists
+            obj_dists = torch.stack(matching_descs_obj_dists)
+            att_dists = None
+            if len(matching_descs_att_dists) > 0:
+                att_dists = torch.stack(matching_descs_att_dists)
+            return obj_dists, att_dists
 
 
 class InferenceMLPModel(torch.nn.Module):

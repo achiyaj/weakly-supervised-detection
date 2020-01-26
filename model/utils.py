@@ -8,7 +8,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
-from config_gqa import *
+from model.config_gqa import *
 
 
 def print_cm(pred_labels, gt_labels, labels, hide_zeroes=False, hide_diagonal=False, hide_threshold=None):

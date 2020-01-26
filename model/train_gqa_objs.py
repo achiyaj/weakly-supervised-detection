@@ -1,11 +1,11 @@
-from gqa_batcher import get_dataloader
+from model.demo_gqa_batcher import get_dataloader
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from model import TrainingMLPModel, InferenceMLPModel
-from config_gqa import *
+from model.mlp_model import TrainingMLPModel, InferenceMLPModel
+from model.config_gqa import *
 import numpy as np
-from utils import print_cm, eval_batch_prediction_gqa, plot_cm, get_cm_path
+from model.utils import eval_batch_prediction_gqa, plot_cm, get_cm_path
 import json
 import argparse
 import os

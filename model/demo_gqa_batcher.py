@@ -2,12 +2,11 @@ import h5py
 # from mpi4py import MPI
 import os
 import json
-from random import sample, shuffle
-from config_gqa import *
+from random import shuffle
+from model.config_gqa import *
 from tqdm import tqdm
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
-from multiprocessing import Lock
 
 
 def pad_descriptors(data):
