@@ -6,6 +6,10 @@ class MultiLoader:
         self.datasets = datasets
         self.sampling_ratios = sampling_ratios
 
+    def set_datasets(self, datasets):
+        self.datasets = datasets
+        self.__iter__()
+
     def __iter__(self):
         self.times_to_sample_left = self.sampling_ratios.copy()
         self.num_objs_left = [len(self.datasets[i]) * self.sampling_ratios[i] for i in range(len(self.datasets))]

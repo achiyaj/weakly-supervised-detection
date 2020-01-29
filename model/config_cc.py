@@ -1,5 +1,4 @@
-relevant_data_file = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/data/cc/top_{}{}_objs_{}_atts_data_{}_{}.json'
-gqa_data_file = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/data/cc/gqa_top_{}_objs_{}_atts_data_{}.json'
+relevant_data_file = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/data/cc/cc_top_{}{}_objs_{}_atts{}_data_{}_{}.json'
 cc_freqs_path = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/scene_graphs/vacancy/{}_freqs.json'
 cc_sgs_path = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/scene_graphs/vacancy/sgs_{}.json'
 gqa_objs_file = '/specific/netapp5_2/gamir/datasets/gqa/objects_dict.json'
@@ -50,9 +49,12 @@ mlp_params = {'hidden_dim': 256,
 sampling_rates = [CC_OVERSAMPLING_RATE, GQA_OVERSAMPLING_RATE]
 
 
-def get_relevant_data_file(gqa_only, num_objs, num_atts, dset, add_gqa):
-    return relevant_data_file.format('gqa_' if gqa_only else '', num_objs, num_atts, dset, 'add_gqa' if add_gqa else '')
-
-
-def get_gqa_data_file(num_objs, num_atts, dset):
-    return gqa_data_file.format(num_objs, num_atts, dset)
+def get_relevant_data_file(gqa_only, num_objs, num_atts, categorize_atts, dset, add_gqa):
+    return relevant_data_file.format(
+        'gqa_' if gqa_only else '',
+        num_objs,
+        num_atts,
+        '_categorized' if categorize_atts else '',
+        dset,
+        'add_gqa' if add_gqa else ''
+    )

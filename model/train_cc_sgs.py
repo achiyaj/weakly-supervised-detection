@@ -13,14 +13,23 @@ import argparse
 import os
 from tqdm import tqdm
 from utils.multiloader import MultiLoader
+import json
 
 
 def get_model_loss(model, data, criterion, device, optimizer, is_train):
     inputs = data['descs'].float().to(device)
     num_descs = data['num_descs'].long().to(device)
     obj_labels = data['obj_labels'].long().to(device)
-    att_labels = data['att_labels'].squeeze().long().to(device) if WITH_ATTS else None
-    att_labels_packed = att_labels[att_labels != -1]
+    att_labels = data['att_labels']
+    categorize_atts = type(att_labels) is dict
+
+    if WITH_ATTS:
+        if not categorize_atts:
+            att_labels = att_labels.squeeze().long().to(device)
+            att_labels_packed = att_labels[att_labels != -1]
+        else:
+            att_labels = {key: value.squeeze().long().to(device) for key, value in att_labels.items()}
+
     num_labels_per_image = data['num_labels_per_image']
     is_strong_supervision = (num_labels_per_image[0] is None)
     # zero the parameter gradients
@@ -36,25 +45,39 @@ def get_model_loss(model, data, criterion, device, optimizer, is_train):
     else:
         loss = criterion(obj_outputs, obj_labels)
         if att_outputs is not None:
-            loss += criterion(att_outputs, att_labels_packed)
+            if not categorize_atts:
+                loss += criterion(att_outputs, att_labels_packed)
+            else:
+                for atts_data in att_outputs.values():
+                    if len(atts_data) > 0:
+                        loss += criterion(atts_data['dists'], atts_data['labels'])
 
     return loss
 
 
 def main(args):
-    cc_train_loader = get_cc_dataloader('train')
-    # cc_val_loader = get_cc_dataloader('val')
+    att_categories = None
+    if USE_ATT_CATEGORIES:
+        att_categories = json.load(open(ATT_CATEGORIES_FILE, 'r'))
+        att_categories = \
+            {key: list(value.keys()) for key, value in att_categories.items() if key not in CATEGORIES_TO_DROP}
+
+    cc_train_loader = get_cc_dataloader('train', att_categories)
+    cc_val_loader = get_cc_dataloader('val', att_categories)
     obj_labels = cc_train_loader.dataset.get_obj_labels()
     att_labels = cc_train_loader.dataset.get_att_labels()
+    gqa_train_datafile = cc_train_loader.dataset.get_datafile().replace('cc', 'gqa')
+    gqa_val_datafile = cc_val_loader.dataset.get_datafile().replace('cc', 'gqa')
+
     if GQA_OVERSAMPLING_RATE > 0:
-        gqa_train_loader = get_gqa_dataloader(obj_labels, att_labels, 'train')
-        gqa_val_loader = get_gqa_dataloader(obj_labels, att_labels, 'val')
+        gqa_train_loader = get_gqa_dataloader(obj_labels, att_labels, gqa_train_datafile, 'train', att_categories)
+        gqa_val_loader = get_gqa_dataloader(obj_labels, att_labels, gqa_val_datafile, 'val', att_categories)
 
     train_multiloader = MultiLoader([cc_train_loader, gqa_train_loader], sampling_rates)
     criterion = nn.CrossEntropyLoss()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    training_net = TrainingMLPModel(**mlp_params, objs_output_dim=len(obj_labels), atts_output_dim=len(att_labels))\
-        .to(device)
+    training_net = TrainingMLPModel(**mlp_params, objs_output_dim=len(obj_labels), atts_output_dim=len(att_labels),
+                                    device=device, att_categories=att_categories)
 
     optimizer = optim.Adam(training_net.parameters(), lr=3e-4)
     best_val_loss = np.inf
@@ -79,6 +102,8 @@ def main(args):
                 if DEBUG:
                     break
 
+        train_multiloader.set_datasets([get_cc_dataloader('train', att_categories),
+                                        get_gqa_dataloader(obj_labels, att_labels, gqa_train_datafile, 'train', att_categories)])
         # perform validation
         running_val_loss = 0
         torch.save(training_net.state_dict(), cur_ckpt_path.format(epoch))
@@ -92,7 +117,7 @@ def main(args):
             if best_val_loss > cur_val_loss:
                 best_val_loss = cur_val_loss
                 best_val_epoch = epoch
-                gqa_val_loader = get_gqa_dataloader(obj_labels, att_labels, 'val')
+                gqa_val_loader = get_gqa_dataloader(obj_labels, att_labels, gqa_val_datafile, 'val', att_categories)
             else:
                 if best_val_epoch + EARLY_STOPPING <= epoch:
                     print('Early stopping after {} epochs'.format(epoch))

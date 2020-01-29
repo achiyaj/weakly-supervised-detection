@@ -11,7 +11,7 @@ import six
 import torch
 
 
-def build_cc_relevant_data(gqa_only, num_objs, num_atts, dset, add_gqa):
+def build_cc_relevant_data(out_path, gqa_only, num_objs, num_atts, atts_to_use, dset, add_gqa):
     cc_obj_freqs = json.load(open(cc_freqs_path.format('objs'), 'r'), object_pairs_hook=OrderedDict)
     cc_att_freqs = json.load(open(cc_freqs_path.format('atts'), 'r'), object_pairs_hook=OrderedDict)
     cc_objs = list(cc_obj_freqs.keys())
@@ -20,6 +20,10 @@ def build_cc_relevant_data(gqa_only, num_objs, num_atts, dset, add_gqa):
     gqa_objs = list(OrderedDict(sorted(gqa_objs_dict.items(), key=lambda x: x[1][1], reverse=True)).keys())
     gqa_atts_dict = json.load(open(gqa_atts_file, 'r'))
     gqa_atts = list(OrderedDict(sorted(gqa_atts_dict.items(), key=lambda x: x[1][1], reverse=True)).keys())
+
+    if atts_to_use:
+        cc_atts = [x for x in cc_atts if x in atts_to_use]
+        gqa_atts = [x for x in gqa_atts if x in atts_to_use]
 
     cc_relevant_objs, cc_relevant_atts = [], []
 
@@ -61,7 +65,6 @@ def build_cc_relevant_data(gqa_only, num_objs, num_atts, dset, add_gqa):
         if len(relevant_objs_and_atts) > 0:
             relevant_dset_objs_and_atts.append((sg_id, [(x[0], x[1]) for x in relevant_objs_and_atts]))
 
-        dset_data_file = get_relevant_data_file(gqa_only, num_objs, num_atts, dset, add_gqa)
     max_num_objs_per_image = max([len(x[1]) for x in relevant_dset_objs + relevant_dset_objs_and_atts])
 
     final_data = {
@@ -72,19 +75,28 @@ def build_cc_relevant_data(gqa_only, num_objs, num_atts, dset, add_gqa):
         'max_num_objs_per_image': max_num_objs_per_image
     }
 
-    with open(dset_data_file, 'w') as out_f:
+    with open(out_path, 'w') as out_f:
         json.dump(final_data, out_f, indent=2)
 
     return cc_relevant_objs, cc_relevant_atts, relevant_objs, relevant_objs_and_atts
 
 
 class MaxLossCCDataset(Dataset):
-    def __init__(self, gqa_only, num_objs, num_atts, dset, with_atts, add_gqa, img_ids=None):
+    def __init__(self, gqa_only, num_objs, num_atts, dset, with_atts, add_gqa, att_categories, img_ids=None):
+        Dataset.__init__(self)
         self.with_atts = with_atts
         self.add_gqa = add_gqa
-        relevant_data_file = get_relevant_data_file(gqa_only, num_objs, num_atts, dset, add_gqa)
-        if os.path.isfile(relevant_data_file):
-            relevant_data = json.load(open(relevant_data_file, 'r'))
+        atts_to_use = None
+        self.categorize_atts = not (att_categories is None)
+        if self.categorize_atts:
+            self.att_categories = list(att_categories.keys())
+            self.att_to_category = \
+                {x: (key, idx) for key, value in att_categories.items() for idx, x in enumerate(value)}
+            atts_to_use = [x for category in att_categories.values() for x in category]
+        self.cc_data_file = \
+            get_relevant_data_file(gqa_only, num_objs, num_atts, self.categorize_atts, dset, add_gqa)
+        if os.path.isfile(self.cc_data_file):
+            relevant_data = json.load(open(self.cc_data_file, 'r'))
             relevant_objs = relevant_data['relevant_objs']
             relevant_atts = relevant_data['relevant_atts']
             self.objs = {relevant_objs[i]: i for i in range(min(num_objs, len(relevant_objs)))}
@@ -98,14 +110,14 @@ class MaxLossCCDataset(Dataset):
 
         else:  # build the relevant dataset
             self.objs, self.atts, objs_data, objs_and_atts_data = \
-                build_cc_relevant_data(gqa_only, num_objs, num_atts, dset, add_gqa)
+                build_cc_relevant_data(self.cc_data_file, gqa_only, num_objs, num_atts, atts_to_use, dset, add_gqa)
             self.cc_data = objs_data
             if self.with_atts:
                 self.cc_data += objs_and_atts_data
 
         shuffle(self.cc_data)
 
-        self.cc_env = lmdb.open(cc_descriptors_file, subdir=False, readonly=True, lock=False, readahead=True,
+        self.cc_env = lmdb.open(cc_descriptors_file, subdir=False, readonly=True, lock=False, readahead=False,
                                 meminit=False)
         self.cc_txn = self.cc_env.begin(write=False)
         self.cc_curs = self.cc_txn.cursor()
@@ -124,17 +136,36 @@ class MaxLossCCDataset(Dataset):
     def get_num_atts(self):
         return len(self.atts)
 
+    def get_datafile(self):
+        return self.cc_data_file
+
+    def get_categorized_atts(self, att_labels, num_labels):
+        categorized_atts = {x: [-1] * num_labels for x in self.att_categories}
+        for label_idx, att_label in enumerate(att_labels):
+            cur_category, cur_label = self.att_to_category[att_label]
+            categorized_atts[cur_category][label_idx] = cur_label
+        return categorized_atts
+
     def get_cc_item(self, idx):
         line_id, labels = self.cc_data[idx]
         att_label_present = (type(labels[0]) == list)
-        if att_label_present:  # this is an object only label
+        if att_label_present:  # this is object + attribute labels
             line_id, objs_and_atts_labels = self.cc_data[idx]
             obj_labels = [x[0] for x in labels]
             att_labels = [x[1] for x in labels]
             num_labels = len(labels)
-        else:  # this is object + attribute labels
+            if self.categorize_atts:
+                att_labels = self.get_categorized_atts(att_labels, num_labels)
+            else:
+                att_labels = [self.atts[x] for x in att_labels]
+        else:  # this is an object only label
             obj_labels = labels
             num_labels = len(obj_labels)
+            if self.categorize_atts:
+                att_labels = {key: [-1] * len(obj_labels) for key in self.att_categories}
+            else:
+                att_labels = [-1] * len(obj_labels)
+
         img_id = self.line_to_imgs_id[line_id].encode()
         raw_data = np.load(six.BytesIO(self.cc_curs.get(img_id)))
         data = raw_data.f.feat
@@ -144,13 +175,9 @@ class MaxLossCCDataset(Dataset):
             'num_descs': num_descs,
             'obj_labels': [self.objs[x] for x in obj_labels],
             'img_id': line_id,
-            'num_labels_per_image': num_labels
+            'num_labels_per_image': num_labels,
+            'att_labels': att_labels
         }
-        if att_label_present:
-            output['att_labels'] = [self.atts[x] for x in att_labels]
-        else:
-            output['att_labels'] = [-1] * len(obj_labels)
-
         return output
 
     def __getitem__(self, idx):
@@ -175,7 +202,12 @@ class MaxLossCCDataset(Dataset):
         output['obj_labels'] = torch.Tensor([x for img_labels in obj_labels for x in img_labels])
         if 'att_labels' in batch[0]:
             att_labels = [x['att_labels'] for x in batch]
-            output['att_labels'] = torch.Tensor([x for img_labels in att_labels for x in img_labels])
+            if type(att_labels[0]) == list:  # attributes are uncategorized
+                output['att_labels'] = torch.Tensor([x for img_labels in att_labels for x in img_labels])
+            else:
+                att_labels_dict = \
+                    {key: [x for img_atts in att_labels for x in img_atts[key]] for key in att_labels[0].keys()}
+                output['att_labels'] = {key: torch.Tensor(value) for key, value in att_labels_dict.items()}
 
         # other data fields
         output['img_id'] = [x['img_id'] for x in batch]
@@ -187,9 +219,9 @@ class MaxLossCCDataset(Dataset):
         self.cc_env.close()
 
 
-def get_cc_dataloader(dset, img_ids=None):
+def get_cc_dataloader(dset, att_categories, img_ids=None):
     dataset = MaxLossCCDataset(GQA_LABELS_ONLY, NUM_TOP_OBJS, NUM_TOP_ATTS, dset, WITH_ATTS, GQA_OVERSAMPLING_RATE > 0,
-                               img_ids)
+                               att_categories, img_ids)
     if dset == 'val':
         return DataLoader(dataset, **val_loader_params, collate_fn=dataset.pad_collate)
     return DataLoader(dataset, **cc_train_loader_params, collate_fn=dataset.pad_collate)
