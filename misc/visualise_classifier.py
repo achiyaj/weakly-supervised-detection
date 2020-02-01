@@ -72,10 +72,11 @@ def main():
     att_categories = None
     if categorize_atts:
         att_categories = json.load(open(ATT_CATEGORIES_FILE, 'r'))
-        att_categories = {key: value for key, value in att_categories.items() if key not in CATEGORIES_TO_DROP}
+        att_categories = \
+            {key: list(value.keys()) for key, value in att_categories.items() if key not in CATEGORIES_TO_DROP}
 
-    model = InferenceMLPModel(mlp_params['hidden_dim'], mlp_params['input_dim'], len(obj_labels_dict), device,
-                              len(att_labels_dict), att_categories)
+    model = InferenceMLPModel(mlp_params['hidden_dim'], mlp_params['input_dim'], len(obj_labels_dict),
+                              len(att_labels_dict), att_categories).to(device)
     model.load_state_dict(torch.load(ckpt_path))
     model.eval()
     ref_model = MLPModel(128, 2048, len(ref_objects_dict)).to(device)
@@ -109,7 +110,8 @@ def main():
                         if categorize_atts:
                             for att_category in CATEGORIES_TO_SHOW:
                                 if pred_att_probs[att_category][i] > ATT_CONF_THRESH:
-                                    cur_label.insert(0, pred_att_labels[att_category][i])
+                                    cur_category_label = pred_att_labels[att_category][i]
+                                    cur_label.insert(0, att_categories[att_category][cur_category_label])
                         elif pred_att_probs[i] > ATT_CONF_THRESH:
                             cur_label.insert(0, pred_att_labels[i])
 

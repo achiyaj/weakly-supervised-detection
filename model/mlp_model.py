@@ -19,17 +19,17 @@ class MLPModel(torch.nn.Module):
 
 
 class TrainingMLPModel(torch.nn.Module):
-    def __init__(self, hidden_dim, input_dim, objs_output_dim, device, att_categories=None, atts_output_dim=0):
+    def __init__(self, hidden_dim, input_dim, objs_output_dim, att_categories=None, atts_output_dim=0):
         super(TrainingMLPModel, self).__init__()
-        self.objs_mlp = MLPModel(hidden_dim, input_dim, objs_output_dim).to(device)
+        self.objs_mlp = MLPModel(hidden_dim, input_dim, objs_output_dim)
         self.use_att_categories = not (att_categories is None)
         if atts_output_dim > 0:
             if self.use_att_categories:
                 self.att_categories = att_categories
-                self.atts_models_dict = \
-                    {key: MLPModel(hidden_dim, input_dim, len(value)).to(device) for key, value in self.att_categories.items()}
+                for key, value in att_categories.items():
+                    setattr(self, key + '_mlp', MLPModel(hidden_dim, input_dim, len(value)))
             else:
-                self.atts_mlp = MLPModel(hidden_dim, input_dim, atts_output_dim).to(device)
+                self.atts_mlp = MLPModel(hidden_dim, input_dim, atts_output_dim)
 
     @staticmethod
     def collate_loss(preds, labels, num_descs, criterion):
@@ -64,7 +64,11 @@ class TrainingMLPModel(torch.nn.Module):
                 atts_outputs = []
                 for i in range(num_descs.shape[0]):
                     cur_descs = x[i, :num_descs[i], :].unsqueeze(0)
-                    atts_outputs.append({key: value(cur_descs) for key, value in self.atts_models_dict.items()})
+                    cur_categories_outputs = {}
+                    for category_name in self.att_categories.keys():
+                        cur_category_outputs = getattr(self, category_name + '_mlp')(cur_descs)
+                        cur_categories_outputs[category_name] = cur_category_outputs
+                    atts_outputs.append(cur_categories_outputs)
             else:
                 atts_outputs = self.atts_mlp(x)
                 unpadded_imgs_atts = [atts_outputs[i, :num_descs[i], :] for i in range(num_descs.shape[0])]
@@ -136,19 +140,19 @@ class TrainingMLPModel(torch.nn.Module):
 
 
 class InferenceMLPModel(torch.nn.Module):
-    def __init__(self, hidden_dim, input_dim, objs_output_dim, device, atts_output_dim=0, att_categories=None):
+    def __init__(self, hidden_dim, input_dim, objs_output_dim, atts_output_dim=0, att_categories=None):
         super(InferenceMLPModel, self).__init__()
-        self.objs_mlp = MLPModel(hidden_dim, input_dim, objs_output_dim).to(device)
+        self.objs_mlp = MLPModel(hidden_dim, input_dim, objs_output_dim)
         self.predict_atts = False
         if atts_output_dim > 0:
             self.predict_atts = True
             if att_categories:
                 self.categorize_atts = True
                 self.att_categories = att_categories
-                self.atts_models_dict = {key: MLPModel(hidden_dim, input_dim, len(value)).to(device) for key, value in
-                                         self.att_categories.items()}
+                for key, value in att_categories.items():
+                    setattr(self, key + '_mlp', MLPModel(hidden_dim, input_dim, len(value)))
             else:
-                self.atts_mlp = MLPModel(hidden_dim, input_dim, atts_output_dim).to(device)
+                self.atts_mlp = MLPModel(hidden_dim, input_dim, atts_output_dim)
 
     def forward(self, x, num_descs):
         objs_outputs = self.objs_mlp(x)
@@ -165,14 +169,16 @@ class InferenceMLPModel(torch.nn.Module):
             if self.categorize_atts:
                 pred_att_labels = {}
                 pred_att_probs = {}
-                for key, model in self.atts_models_dict.items():
-                    cur_category_outputs = self.atts_models_dict[key](x)
+                # for key, model in self.atts_models_dict.items():
+                for category_name in self.att_categories.keys():
+                    category_model = getattr(self, category_name + '_mlp')
+                    cur_category_outputs = category_model(x)
                     unpadded_imgs_atts = to_numpy(
                         [cur_category_outputs[i, :num_descs[i], :] for i in range(num_descs.shape[0])])
                     cur_pred_att_labels = [np.argmax(x, axis=1).tolist() for x in unpadded_imgs_atts][0]
                     cur_pred_att_probs = [np.max(x, axis=1).tolist() for x in unpadded_imgs_atts][0]
-                    pred_att_labels[key] = cur_pred_att_labels
-                    pred_att_probs[key] = cur_pred_att_probs
+                    pred_att_labels[category_name] = cur_pred_att_labels
+                    pred_att_probs[category_name] = cur_pred_att_probs
             else:
                 atts_outputs = self.atts_mlp(x)
                 unpadded_imgs_atts = to_numpy([atts_outputs[i, :num_descs[i], :] for i in range(num_descs.shape[0])])

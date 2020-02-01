@@ -69,15 +69,14 @@ def main(args):
     gqa_train_datafile = cc_train_loader.dataset.get_datafile().replace('cc', 'gqa')
     gqa_val_datafile = cc_val_loader.dataset.get_datafile().replace('cc', 'gqa')
 
-    if GQA_OVERSAMPLING_RATE > 0:
-        gqa_train_loader = get_gqa_dataloader(obj_labels, att_labels, gqa_train_datafile, 'train', att_categories)
-        gqa_val_loader = get_gqa_dataloader(obj_labels, att_labels, gqa_val_datafile, 'val', att_categories)
+    gqa_train_loader = get_gqa_dataloader(obj_labels, att_labels, gqa_train_datafile, 'train', att_categories)
+    gqa_val_loader = get_gqa_dataloader(obj_labels, att_labels, gqa_val_datafile, 'val', att_categories)
 
     train_multiloader = MultiLoader([cc_train_loader, gqa_train_loader], sampling_rates)
     criterion = nn.CrossEntropyLoss()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     training_net = TrainingMLPModel(**mlp_params, objs_output_dim=len(obj_labels), atts_output_dim=len(att_labels),
-                                    device=device, att_categories=att_categories)
+                                    att_categories=att_categories).to(device)
 
     optimizer = optim.Adam(training_net.parameters(), lr=3e-4)
     best_val_loss = np.inf
