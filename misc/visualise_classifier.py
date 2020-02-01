@@ -21,19 +21,24 @@ gqa_val_sgs = '/specific/netapp5_2/gamir/datasets/gqa/raw_data/val_sceneGraphs.j
 gqa_data_file = '/specific/netapp5_2/gamir/datasets/gqa/orig_features_our_format_all.h5'
 ckpt_path = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/exps/cc/{}/*_epoch_{}.pt'
 imgs_path = '/specific/netapp5_2/gamir/datasets/gqa/images/{}.jpg'
-labels_path = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/data/cc/top_gqa_50_objs_50_atts_data_val.json'
+labels_path = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/data/cc/top_gqa_10000_objs_10000_atts_data_val_add_gqa.json'
 ref_objs_dict = '/specific/netapp5_2/gamir/datasets/gqa/objects_dict.json'
+ATT_CATEGORIES_FILE = '/specific/netapp5_2/gamir/datasets/gqa/raw_data/att_categories.json'
+CATEGORIES_TO_DROP = ['hposition', 'place', 'realism', 'room', 'texture', 'vposition', 'company', 'depth', 'flavor',
+                      'race', 'location', 'hardness', 'gender', 'brightness']
+CATEGORIES_TO_SHOW = ['color']
+categorize_atts = True
 NUM_IMGS_TO_TEST = 20
-EXP_NAME = 'cc_objs_and_atts'
-BEST_VAL_EPOCH = 0
-OBJ_CONF_THRESH = 0.8
-ATT_CONF_THRESH = 0.8
+EXP_NAME = 'train_cc_categorize_atts'
+BEST_VAL_EPOCH = 5
+OBJ_CONF_THRESH = 0.2
+ATT_CONF_THRESH = 0.2
 REF_CONF_THRESH = 0.2
 
 ckpt_path = glob(ckpt_path.format(EXP_NAME, BEST_VAL_EPOCH))[-1]
 output_path = os.path.join(os.path.dirname(ckpt_path), 'imgs')
 os.makedirs(output_path, exist_ok=True)
-ref_objects_detector_ckpt = '/specific/netapp5_2/gamir/achiya/vqa/misc/offline_classification/ckpts/objs_cc.h5'
+ref_objects_detector_ckpt = '/specific/netapp5_2/gamir/achiya/vqa/misc/offline_classification/ckpts/objs.h5'
 
 
 class MLPModel(torch.nn.Module):
@@ -64,8 +69,13 @@ def main():
     att_labels = data_dict['relevant_atts']
     att_labels_dict = {i: att_labels[i] for i in range(len(att_labels))}
 
-    model = InferenceMLPModel(mlp_params['hidden_dim'], mlp_params['input_dim'], len(obj_labels_dict),
-                              len(att_labels_dict)).to(device)
+    att_categories = None
+    if categorize_atts:
+        att_categories = json.load(open(ATT_CATEGORIES_FILE, 'r'))
+        att_categories = {key: value for key, value in att_categories.items() if key not in CATEGORIES_TO_DROP}
+
+    model = InferenceMLPModel(mlp_params['hidden_dim'], mlp_params['input_dim'], len(obj_labels_dict), device,
+                              len(att_labels_dict), att_categories)
     model.load_state_dict(torch.load(ckpt_path))
     model.eval()
     ref_model = MLPModel(128, 2048, len(ref_objects_dict)).to(device)
@@ -84,20 +94,26 @@ def main():
                 model(tensor_features, np.array([features.shape[0]]))
             pred_obj_labels = pred_obj_labels[0]
             pred_obj_probs = pred_obj_probs[0]
-            if WITH_ATTS:
+            if WITH_ATTS and not categorize_atts:
                 pred_att_labels = pred_att_labels[0]
                 pred_att_probs = pred_att_probs[0]
 
             relevant_bboxes_data = []
             for i in range(len(pred_obj_labels)):
+                cur_label = []
                 if obj_labels_dict[pred_obj_labels[i]] == 'BACKGROUND':
                     continue
                 if pred_obj_probs[i] > OBJ_CONF_THRESH:
-                    if WITH_ATTS and pred_att_probs[i] > ATT_CONF_THRESH:
-                        relevant_bboxes_data.append(
-                            (i, att_labels_dict[pred_att_labels[i]] + ' ' + obj_labels_dict[pred_obj_labels[i]]))
-                    else:
-                        relevant_bboxes_data.append((i, obj_labels_dict[pred_obj_labels[i]]))
+                    cur_label.append(obj_labels_dict[pred_obj_labels[i]])
+                    if WITH_ATTS:
+                        if categorize_atts:
+                            for att_category in CATEGORIES_TO_SHOW:
+                                if pred_att_probs[att_category][i] > ATT_CONF_THRESH:
+                                    cur_label.insert(0, pred_att_labels[att_category][i])
+                        elif pred_att_probs[i] > ATT_CONF_THRESH:
+                            cur_label.insert(0, pred_att_labels[i])
+
+                    relevant_bboxes_data.append((i, ' '.join(cur_label)))
 
             for box_data in relevant_bboxes_data:
                 box_id, box_label = box_data

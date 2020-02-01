@@ -136,15 +136,21 @@ class TrainingMLPModel(torch.nn.Module):
 
 
 class InferenceMLPModel(torch.nn.Module):
-    def __init__(self, hidden_dim, input_dim, objs_output_dim, atts_output_dim=0):
+    def __init__(self, hidden_dim, input_dim, objs_output_dim, device, atts_output_dim=0, att_categories=None):
         super(InferenceMLPModel, self).__init__()
-        self.objs_mlp = MLPModel(hidden_dim, input_dim, objs_output_dim)
+        self.objs_mlp = MLPModel(hidden_dim, input_dim, objs_output_dim).to(device)
         self.predict_atts = False
         if atts_output_dim > 0:
-            self.atts_mlp = MLPModel(hidden_dim, input_dim, atts_output_dim)
             self.predict_atts = True
+            if att_categories:
+                self.categorize_atts = True
+                self.att_categories = att_categories
+                self.atts_models_dict = {key: MLPModel(hidden_dim, input_dim, len(value)).to(device) for key, value in
+                                         self.att_categories.items()}
+            else:
+                self.atts_mlp = MLPModel(hidden_dim, input_dim, atts_output_dim).to(device)
 
-    def forward(self, x, num_descs, predict_atts=False):
+    def forward(self, x, num_descs):
         objs_outputs = self.objs_mlp(x)
 
         def to_numpy(tensors_list):
@@ -156,9 +162,21 @@ class InferenceMLPModel(torch.nn.Module):
         pred_att_labels, pred_att_probs = None, None
 
         if self.predict_atts:
-            atts_outputs = self.atts_mlp(x)
-            unpadded_imgs_atts = to_numpy([atts_outputs[i, :num_descs[i], :] for i in range(num_descs.shape[0])])
-            pred_att_labels = [np.argmax(x, axis=1).tolist() for x in unpadded_imgs_atts]
-            pred_att_probs = [np.max(x, axis=1).tolist() for x in unpadded_imgs_atts]
+            if self.categorize_atts:
+                pred_att_labels = {}
+                pred_att_probs = {}
+                for key, model in self.atts_models_dict.items():
+                    cur_category_outputs = self.atts_models_dict[key](x)
+                    unpadded_imgs_atts = to_numpy(
+                        [cur_category_outputs[i, :num_descs[i], :] for i in range(num_descs.shape[0])])
+                    cur_pred_att_labels = [np.argmax(x, axis=1).tolist() for x in unpadded_imgs_atts][0]
+                    cur_pred_att_probs = [np.max(x, axis=1).tolist() for x in unpadded_imgs_atts][0]
+                    pred_att_labels[key] = cur_pred_att_labels
+                    pred_att_probs[key] = cur_pred_att_probs
+            else:
+                atts_outputs = self.atts_mlp(x)
+                unpadded_imgs_atts = to_numpy([atts_outputs[i, :num_descs[i], :] for i in range(num_descs.shape[0])])
+                pred_att_labels = [np.argmax(x, axis=1).tolist() for x in unpadded_imgs_atts]
+                pred_att_probs = [np.max(x, axis=1).tolist() for x in unpadded_imgs_atts]
 
         return pred_obj_labels, pred_obj_probs, pred_att_labels, pred_att_probs
