@@ -63,16 +63,16 @@ def main(args):
             {key: list(value.keys()) for key, value in att_categories.items() if key not in CATEGORIES_TO_DROP}
 
     cc_train_loader = get_cc_dataloader('train', att_categories)
-    cc_val_loader = get_cc_dataloader('val', att_categories)
     obj_labels = cc_train_loader.dataset.get_obj_labels()
     att_labels = cc_train_loader.dataset.get_att_labels()
     gqa_train_datafile = cc_train_loader.dataset.get_datafile().replace('cc', 'gqa')
-    gqa_val_datafile = cc_val_loader.dataset.get_datafile().replace('cc', 'gqa')
+    gqa_val_datafile = gqa_train_datafile.replace('train', 'val')
 
-    gqa_train_loader = get_gqa_dataloader(obj_labels, att_labels, gqa_train_datafile, 'train', att_categories)
+    cc_train_getter = lambda: get_cc_dataloader('train', att_categories)
+    gqa_train_getter = lambda: get_gqa_dataloader(obj_labels, att_labels, gqa_train_datafile, 'train', att_categories)
     gqa_val_loader = get_gqa_dataloader(obj_labels, att_labels, gqa_val_datafile, 'val', att_categories)
 
-    train_multiloader = MultiLoader([cc_train_loader, gqa_train_loader], sampling_rates)
+    train_multiloader = MultiLoader([cc_train_getter, gqa_train_getter], sampling_rates)
     criterion = nn.CrossEntropyLoss()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     training_net = TrainingMLPModel(**mlp_params, objs_output_dim=len(obj_labels), atts_output_dim=len(att_labels),
@@ -101,8 +101,6 @@ def main(args):
                 if DEBUG:
                     break
 
-        train_multiloader.set_datasets([get_cc_dataloader('train', att_categories),
-                                        get_gqa_dataloader(obj_labels, att_labels, gqa_train_datafile, 'train', att_categories)])
         # perform validation
         running_val_loss = 0
         torch.save(training_net.state_dict(), cur_ckpt_path.format(epoch))
