@@ -115,17 +115,30 @@ class MaxLossCCDataset(Dataset):
             if self.with_atts:
                 self.cc_data += objs_and_atts_data
 
-        shuffle(self.cc_data)
+        cc_data_dict = {}
+        for data_entry in self.cc_data:
+            key, data = data_entry
+            if type(data[0]) == str:  # this is an objects list
+                data = [[x] for x in data]  # wrap each element in a list
+            if key in cc_data_dict:
+                cc_data_dict[key] += data
+            else:
+                cc_data_dict[key] = data
 
-        self.cc_env = lmdb.open(cc_descriptors_file, subdir=False, readonly=True, lock=False, readahead=False,
+        self.cc_data = cc_data_dict
+
+        self.cc_env = lmdb.open(cc_descriptors_file, subdir=False, readonly=True, lock=False, readahead=True,
                                 meminit=False)
         self.cc_txn = self.cc_env.begin(write=False)
         self.cc_curs = self.cc_txn.cursor()
         self.line_to_imgs_id = json.load(open(line_to_img_id_file.format(dset)))
+        self.imgs_id_to_line = {value: key for key, value in self.line_to_imgs_id.items()}
 
         if img_ids:  # if the image IDs to load are specified
             self.objs_data = [x for x in self.objs_data if x[0] in img_ids]
             self.objs_and_atts_data = [x for x in self.objs_and_atts_data if x[0] in img_ids]
+
+        self.data_generator = self.iterate_lmdb_cursor()
 
     def __len__(self):
         return len(self.cc_data)
@@ -139,35 +152,36 @@ class MaxLossCCDataset(Dataset):
     def get_datafile(self):
         return self.cc_data_file
 
+    def iterate_lmdb_cursor(self):
+        for key, value in self.cc_curs:
+            img_id = key.decode()
+            if img_id not in self.imgs_id_to_line or self.imgs_id_to_line[img_id] not in self.cc_data:
+                continue
+            yield self.imgs_id_to_line[img_id], value
+
     def get_categorized_atts(self, att_labels, num_labels):
         categorized_atts = {x: [-1] * num_labels for x in self.att_categories}
         for label_idx, att_label in enumerate(att_labels):
+            if att_label == -1:
+                continue
             cur_category, cur_label = self.att_to_category[att_label]
             categorized_atts[cur_category][label_idx] = cur_label
         return categorized_atts
 
     def get_cc_item(self, idx):
-        line_id, labels = self.cc_data[idx]
-        att_label_present = (type(labels[0]) == list)
-        if att_label_present:  # this is object + attribute labels
-            line_id, objs_and_atts_labels = self.cc_data[idx]
-            obj_labels = [x[0] for x in labels]
-            att_labels = [x[1] for x in labels]
-            num_labels = len(labels)
-            if self.categorize_atts:
-                att_labels = self.get_categorized_atts(att_labels, num_labels)
-            else:
-                att_labels = [self.atts[x] for x in att_labels]
-        else:  # this is an object only label
-            obj_labels = labels
-            num_labels = len(obj_labels)
-            if self.categorize_atts:
-                att_labels = {key: [-1] * len(obj_labels) for key in self.att_categories}
-            else:
-                att_labels = [-1] * len(obj_labels)
+        data = next(self.data_generator)
+        line_id, raw_data = data
+        labels = self.cc_data[line_id]
 
-        img_id = self.line_to_imgs_id[line_id].encode()
-        raw_data = np.load(six.BytesIO(self.cc_curs.get(img_id)))
+        obj_labels = [x[0] for x in labels]
+        att_labels = [x[1] if len(x) > 1 else -1 for x in labels]
+        num_labels = len(labels)
+        if self.categorize_atts:
+            att_labels = self.get_categorized_atts(att_labels, num_labels)
+        else:
+            att_labels = [self.atts[x] for x in att_labels]
+
+        raw_data = np.load(six.BytesIO(raw_data))
         data = raw_data.f.feat
         num_descs = data.shape[0]
         output = {
