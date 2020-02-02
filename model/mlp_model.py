@@ -61,14 +61,11 @@ class TrainingMLPModel(torch.nn.Module):
         unpadded_imgs_objs = [objs_outputs[i, :num_descs[i], :] for i in range(num_descs.shape[0])]
         if att_labels is not None:
             if self.use_att_categories:
-                atts_outputs = []
-                for i in range(num_descs.shape[0]):
-                    cur_descs = x[i, :num_descs[i], :].unsqueeze(0)
-                    cur_categories_outputs = {}
-                    for category_name in self.att_categories.keys():
-                        cur_category_outputs = getattr(self, category_name + '_mlp')(cur_descs)
-                        cur_categories_outputs[category_name] = cur_category_outputs
-                    atts_outputs.append(cur_categories_outputs)
+                atts_outputs = [{} for _ in range(num_descs.shape[0])]
+                for category_name in self.att_categories.keys():
+                    category_outputs = getattr(self, category_name + '_mlp')(x)
+                    for i in range(num_descs.shape[0]):
+                        atts_outputs[i][category_name] = category_outputs[i, :num_descs[i], :].unsqueeze(0)
             else:
                 atts_outputs = self.atts_mlp(x)
                 unpadded_imgs_atts = [atts_outputs[i, :num_descs[i], :] for i in range(num_descs.shape[0])]
