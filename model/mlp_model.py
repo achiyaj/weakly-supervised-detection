@@ -57,6 +57,7 @@ class TrainingMLPModel(torch.nn.Module):
 
     def forward(self, x, num_descs, num_labels_per_img, obj_labels, att_labels=None):
         objs_outputs = self.objs_mlp(x)
+        atts_outputs = None
 
         unpadded_imgs_objs = [objs_outputs[i, :num_descs[i], :] for i in range(num_descs.shape[0])]
         if att_labels is not None:

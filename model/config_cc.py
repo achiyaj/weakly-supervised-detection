@@ -22,8 +22,8 @@ VAL_EVERY = 200
 NUM_VAL_EPOCHS = 5
 GQA_OVERSAMPLING_RATE = 1
 CC_OVERSAMPLING_RATE = 0
-USE_ATT_CATEGORIES = True
 WITH_ATTS = True
+USE_ATT_CATEGORIES = WITH_ATTS and True
 DEBUG = False
 CATEGORIES_TO_DROP = ['hposition', 'place', 'realism', 'room', 'texture', 'vposition', 'company', 'depth', 'flavor',
                       'race', 'location', 'hardness', 'gender', 'brightness']

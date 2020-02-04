@@ -11,10 +11,11 @@ import torch
 
 
 class GQAWithAttsDataset(Dataset):
-    def __init__(self, objs, atts, gqa_data_path, dset, att_categories):
+    def __init__(self, objs, atts, gqa_data_path, dset, with_atts, att_categories):
         Dataset.__init__(self)
         self.objs = objs
         self.atts = atts
+        self.with_atts = with_atts
         self.gqa_env = lmdb.open(gqa_descriptors_file, subdir=False, readonly=True, lock=False, readahead=False,
                                  meminit=False)
         self.gqa_txn = self.gqa_env.begin(write=False)
@@ -46,28 +47,32 @@ class GQAWithAttsDataset(Dataset):
     def get_label_vectors(self, raw_labels, num_descs):
         # first initialize all of the labels with "BACKGROUND"
         obj_labels = np.ones((num_descs)) * (-1)
-        if self.categorize_atts:
-            att_labels = {key: np.ones((num_descs)) * (-1) for key in self.att_categories.keys()}
+        if self.with_atts:
+            if self.categorize_atts:
+                att_labels = {key: np.ones((num_descs)) * (-1) for key in self.att_categories.keys()}
+            else:
+                att_labels = np.ones((num_descs)) * (-1)
         else:
-            att_labels = np.ones((num_descs)) * (-1)
+            att_labels = None
         for obj_id, labels in raw_labels.items():
             obj_labels[int(obj_id)] = self.objs[labels[0]]
             cur_desc_att_labels = labels[1]
             if len(cur_desc_att_labels) > 0:
-                if self.categorize_atts:
-                    cur_categorized_atts_dict = {}
-                    for att_label in cur_desc_att_labels:
-                        category, label_id = self.att_to_category[att_label]
-                        if category in cur_categorized_atts_dict:
-                            cur_categorized_atts_dict[category].append(label_id)
-                        else:
-                            cur_categorized_atts_dict[category] = [label_id]
+                if self.with_atts:
+                    if self.categorize_atts:
+                        cur_categorized_atts_dict = {}
+                        for att_label in cur_desc_att_labels:
+                            category, label_id = self.att_to_category[att_label]
+                            if category in cur_categorized_atts_dict:
+                                cur_categorized_atts_dict[category].append(label_id)
+                            else:
+                                cur_categorized_atts_dict[category] = [label_id]
 
-                    for category_name, category_labels in cur_categorized_atts_dict.items():
-                        chosen_label = choice(category_labels)
-                        att_labels[category_name][int(obj_id)] = chosen_label
-                else:
-                    att_labels[int(obj_id)] = self.atts[choice(cur_desc_att_labels)]
+                        for category_name, category_labels in cur_categorized_atts_dict.items():
+                            chosen_label = choice(category_labels)
+                            att_labels[category_name][int(obj_id)] = chosen_label
+                    else:
+                        att_labels[int(obj_id)] = self.atts[choice(cur_desc_att_labels)]
 
         return obj_labels, att_labels
 
@@ -99,7 +104,7 @@ class GQAWithAttsDataset(Dataset):
         padded_obj_labels = [np.concatenate((x, np.array([-1] * (MAX_NUM_OBJS - x.shape[0])))) for x in obj_labels]
         output['obj_labels'] = torch.Tensor(np.stack(padded_obj_labels))
 
-        if 'att_labels' in batch[0]:
+        if batch[0]['att_labels'] is not None:
             att_labels = [x['att_labels'] for x in batch]
             if type(att_labels[0]) == list:  # attributes are uncategorized
                 padded_att_labels = [np.concatenate((x, np.array([-1] * (MAX_NUM_OBJS - x.shape[0])))) for x in att_labels]
@@ -108,6 +113,8 @@ class GQAWithAttsDataset(Dataset):
                 att_labels_dict = \
                     {key: [x for img_atts in att_labels for x in img_atts[key]] for key in att_labels[0].keys()}
                 output['att_labels'] = {key: torch.Tensor(value) for key, value in att_labels_dict.items()}
+        else:
+            output['att_labels'] = None
 
         # other data fields
         output['img_id'] = [x['img_id'] for x in batch]
@@ -120,7 +127,7 @@ class GQAWithAttsDataset(Dataset):
 
 
 def get_gqa_dataloader(objs, atts, data_path, dset, att_categories=None):
-    dataset = GQAWithAttsDataset(objs, atts, data_path, dset, att_categories)
+    dataset = GQAWithAttsDataset(objs, atts, data_path, dset, WITH_ATTS, att_categories)
     if dset == 'val':
         return DataLoader(dataset, **val_loader_params, collate_fn=dataset.pad_collate)
     return DataLoader(dataset, **gqa_train_loader_params, collate_fn=dataset.pad_collate)

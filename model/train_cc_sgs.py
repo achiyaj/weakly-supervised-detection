@@ -30,6 +30,8 @@ def get_model_loss(model, data, criterion, device, optimizer, is_train):
             att_labels_packed = att_labels[att_labels != -1]
         else:
             att_labels = {key: value.squeeze().long().to(device) for key, value in att_labels.items()}
+    else:
+        att_labels = None
 
     num_labels_per_image = data['num_labels_per_image']
     is_strong_supervision = (num_labels_per_image[0] is None)
