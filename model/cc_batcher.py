@@ -127,7 +127,7 @@ class MaxLossCCDataset(Dataset):
 
         self.cc_data = cc_data_dict
 
-        self.cc_env = lmdb.open(cc_descriptors_file, subdir=False, readonly=True, lock=False, readahead=True,
+        self.cc_env = lmdb.open(cc_descriptors_file, subdir=False, readonly=True, lock=False, readahead=False,
                                 meminit=False)
         self.cc_txn = self.cc_env.begin(write=False)
         self.cc_curs = self.cc_txn.cursor()
