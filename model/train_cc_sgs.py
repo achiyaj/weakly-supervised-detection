@@ -14,6 +14,7 @@ import os
 from tqdm import tqdm
 from utils.multiloader import MultiLoader
 import json
+from socket import gethostname
 
 
 def get_model_loss(model, data, criterion, device, optimizer, is_train):
@@ -123,6 +124,8 @@ def main(args):
 
 
 if __name__ == '__main__':
+    print('Running on PC: {}'.format(gethostname()))
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--exp_name', default='exp0', type=str, help='Where to save results')
     args = parser.parse_args()
