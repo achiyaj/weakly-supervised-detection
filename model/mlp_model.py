@@ -110,7 +110,8 @@ class TrainingMLPModel(torch.nn.Module):
                             matching_desc_id = matching_obj_probs.argmax()
                             matching_descs_obj_dists.append(unpadded_imgs_objs[img_idx][matching_desc_id, :])
                     else:
-                        cur_att_label = att_labels[total_labels_count]
+                        # if there are no attribute labels, return object distributions only
+                        cur_att_label = att_labels[total_labels_count] if att_labels else -1
                         if cur_att_label == -1:
                             matching_desc_id = matching_obj_probs.argmax()
                             matching_descs_obj_dists.append(unpadded_imgs_objs[img_idx][matching_desc_id, :])

@@ -174,12 +174,14 @@ class MaxLossCCDataset(Dataset):
         labels = self.cc_data[line_id]
 
         obj_labels = [x[0] for x in labels]
-        att_labels = [x[1] if len(x) > 1 else -1 for x in labels]
         num_labels = len(labels)
-        if self.categorize_atts:
-            att_labels = self.get_categorized_atts(att_labels, num_labels)
-        else:
-            att_labels = [self.atts[x] for x in att_labels]
+        att_labels = None
+        if self.with_atts:
+            att_labels = [x[1] if len(x) > 1 else -1 for x in labels]
+            if self.categorize_atts:
+                att_labels = self.get_categorized_atts(att_labels, num_labels)
+            else:
+                att_labels = [self.atts[x] for x in att_labels]
 
         raw_data = np.load(six.BytesIO(raw_data))
         data = raw_data.f.feat
@@ -214,7 +216,7 @@ class MaxLossCCDataset(Dataset):
         # pad object labels
         obj_labels = [x['obj_labels'] for x in batch]
         output['obj_labels'] = torch.Tensor([x for img_labels in obj_labels for x in img_labels])
-        if 'att_labels' in batch[0]:
+        if batch[0]['att_labels'] is not None:
             att_labels = [x['att_labels'] for x in batch]
             if type(att_labels[0]) == list:  # attributes are uncategorized
                 output['att_labels'] = torch.Tensor([x for img_labels in att_labels for x in img_labels])
@@ -222,6 +224,8 @@ class MaxLossCCDataset(Dataset):
                 att_labels_dict = \
                     {key: [x for img_atts in att_labels for x in img_atts[key]] for key in att_labels[0].keys()}
                 output['att_labels'] = {key: torch.Tensor(value) for key, value in att_labels_dict.items()}
+        else:
+            output['att_labels'] = None
 
         # other data fields
         output['img_id'] = [x['img_id'] for x in batch]
