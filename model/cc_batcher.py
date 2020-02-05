@@ -147,6 +147,8 @@ class MaxLossCCDataset(Dataset):
         return len(self.objs)
 
     def get_num_atts(self):
+        if not self.with_atts:
+            return 0
         return len(self.atts)
 
     def get_datafile(self):
@@ -203,6 +205,8 @@ class MaxLossCCDataset(Dataset):
         return self.objs
 
     def get_att_labels(self):
+        if not self.with_atts:
+            return []
         return self.atts
 
     @staticmethod
