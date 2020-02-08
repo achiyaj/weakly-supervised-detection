@@ -15,6 +15,7 @@ from tqdm import tqdm
 from utils.multiloader import MultiLoader
 import json
 from socket import gethostname
+from glob import glob
 
 
 def get_model_loss(model, data, criterion, device, optimizer, is_train):
@@ -58,6 +59,15 @@ def get_model_loss(model, data, criterion, device, optimizer, is_train):
     return loss
 
 
+def get_restore_ckpt(cur_ckpts_template):
+    ckpt_files = glob(cur_ckpts_template)
+    get_epoch_num = lambda ckpt_filename: int(ckpt_filename[:-3].split('_')[-1])
+    ckpt_files.sort(key=get_epoch_num)
+    latest_ckpt = ckpt_files[-1]
+    latest_epoch = get_epoch_num(latest_ckpt)
+    return latest_ckpt, latest_epoch + 1
+
+
 def main(args):
     att_categories = None
     if USE_ATT_CATEGORIES:
@@ -89,10 +99,23 @@ def main(args):
         print('No validation batches!')
         return
 
-    cur_ckpt_path = ckpt_path.format(args.exp_name, '_and_atts' if WITH_ATTS else '', '{}')
+    start_epoch = 0
+    if RESTORE_FROM_CKPT:
+        cur_ckpts_template = ckpts_template.format(args.exp_name, '_and_atts' if WITH_ATTS else '', '*')
+        cur_ckpt_path, start_epoch = get_restore_ckpt(cur_ckpts_template)
+        try:
+            training_net.load_state_dict(torch.load(cur_ckpt_path))
+        except RuntimeError:
+            print('Current model configuration does not match the checkpoint state dict!')
+            return
+        print(f'Continuing to train from epoch {start_epoch - 1} checkpoint!')
+    else:
+        cur_ckpt_path = ckpts_template.format(args.exp_name, '_and_atts' if WITH_ATTS else '', '{}')
+
     os.makedirs(os.path.dirname(cur_ckpt_path), exist_ok=True)
 
-    for epoch in range(NUM_EPOCHS):
+    for epoch in range(start_epoch, NUM_EPOCHS):
+        print(f'Epoch: {epoch}')
         for i, data in tqdm(enumerate(train_multiloader), total=len(train_multiloader)):
             loss = get_model_loss(training_net, data, criterion, device, optimizer, is_train=True)
             loss.backward()

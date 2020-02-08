@@ -6,7 +6,7 @@ gqa_atts_file = '/specific/netapp5_2/gamir/datasets/gqa/attributes_dict.json'
 cc_descriptors_file = '/specific/netapp5_2/gamir/achiya/Downloads/firefox_downloads/googlebu_att.lmdb'
 gqa_descriptors_file = '/specific/netapp5_2/gamir/datasets/gqa/orig_features_our_format_all.lmdb'
 line_to_img_id_file = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/data_labels/{}_img_ids.json'
-ckpt_path = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/exps/cc/{}/objs{}_ckpts_epoch_{}.pt'
+ckpts_template = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/exps/cc/{}/objs{}_ckpts_epoch_{}.pt'
 cc_metadata_path = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/data_labels/googletalk.json'
 ATT_CATEGORIES_FILE = '/specific/netapp5_2/gamir/datasets/gqa/raw_data/att_categories.json'
 
@@ -15,7 +15,7 @@ NUM_TOP_ATTS = 10000
 GQA_LABELS_ONLY = True
 MAX_NUM_OBJS = 100
 DESCRIPTORS_DIM = 2048
-NUM_EPOCHS = 20
+NUM_EPOCHS = 100
 EARLY_STOPPING = 4
 PRINT_EVERY = 200
 VAL_EVERY = 200
@@ -24,17 +24,18 @@ GQA_OVERSAMPLING_RATE = 1
 CC_OVERSAMPLING_RATE = 0
 WITH_ATTS = True
 USE_ATT_CATEGORIES = WITH_ATTS and True
+RESTORE_FROM_CKPT = False
 DEBUG = False
 CATEGORIES_TO_DROP = ['hposition', 'place', 'realism', 'room', 'texture', 'vposition', 'company', 'depth', 'flavor',
                       'race', 'location', 'hardness', 'gender', 'brightness']
 
 cc_train_loader_params = {'batch_size': 64,
-                          'shuffle': True,
+                          'shuffle': False,
                           'num_workers': 8,
                           'drop_last': True}
 
 gqa_train_loader_params = {'batch_size': 64,
-                           'shuffle': True,
+                           'shuffle': False,
                            'num_workers': 1,
                            'drop_last': True}
 
