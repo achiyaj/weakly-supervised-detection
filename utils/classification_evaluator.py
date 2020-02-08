@@ -16,7 +16,7 @@ from tqdm import tqdm
 from torch.utils import data
 from sklearn.metrics import accuracy_score
 
-ckpt_path = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/exps/cc/{}/*_epoch_{}.pt'
+ckpt_path_template = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/exps/cc/{}/*_epoch_{}.pt'
 labels_path = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/data/cc/top_gqa_10000_objs_10000_atts_data_val_add_gqa.json'
 ref_objs_dict = '/specific/netapp5_2/gamir/datasets/gqa/objects_dict.json'
 ATT_CATEGORIES_FILE = '/specific/netapp5_2/gamir/datasets/gqa/raw_data/att_categories.json'
@@ -30,7 +30,7 @@ CATEGORIES_TO_DROP = ['hposition', 'place', 'realism', 'room', 'texture', 'vposi
 EXP_NAME = 'train_1cc_4gqa_cat_atts'
 BEST_VAL_EPOCH = 5
 
-ckpt_path = glob(ckpt_path.format(EXP_NAME, BEST_VAL_EPOCH))[-1]
+ckpt_path = glob(ckpt_path_template.format(EXP_NAME, BEST_VAL_EPOCH))[-1]
 
 loader_params = {'batch_size': 256,
                  'shuffle': True,
@@ -83,9 +83,10 @@ def compare_models(my_model, ref_model, dset_path, classifier_class, my_labels_t
     for batch in tqdm(data_loader):
         descs = batch[0].float().to(device)
         labels = batch[1].numpy()[:, 0]
-        ref_model_output = ref_model(descs).argmax(axis=1).detach().cpu().numpy()
+        ref_model_output = ref_model(descs.unsqueeze(0)).squeeze(0).argmax(axis=1).detach().cpu().numpy()
         my_model_output = my_model(descs.unsqueeze(0)).squeeze(0).argmax(axis=1).detach().cpu().numpy()
         if my_labels_to_ref_labels:
+            ref_model_output = [my_labels_to_ref_labels[x] for x in ref_model_output]
             my_model_output = [my_labels_to_ref_labels[x] for x in my_model_output]
         all_gt_labels += [x for x in labels]
         all_ref_preds += [x for x in ref_model_output]
@@ -93,6 +94,63 @@ def compare_models(my_model, ref_model, dset_path, classifier_class, my_labels_t
 
     print(f'for ref model {classifier_class} accuracy is: {accuracy_score(all_gt_labels, all_ref_preds)}')
     print(f'for my model {classifier_class} accuracy is: {accuracy_score(all_gt_labels, all_my_preds)}')
+
+
+def load_model(cur_ckpt_path, classifier_class, obj_labels_dict, att_labels_dict, att_categories):
+    try:
+        model = InferenceMLPModel(mlp_params['hidden_dim'], mlp_params['input_dim'], len(obj_labels_dict))
+        model.load_state_dict(torch.load(cur_ckpt_path))
+    except:
+        try:
+            model = InferenceMLPModel(mlp_params['hidden_dim'], mlp_params['input_dim'], len(obj_labels_dict),
+                                      len(att_labels_dict))
+            model.load_state_dict(torch.load(cur_ckpt_path))
+        except:
+            model = InferenceMLPModel(mlp_params['hidden_dim'], mlp_params['input_dim'], len(obj_labels_dict),
+                                      len(att_labels_dict), att_categories)
+            model.load_state_dict(torch.load(cur_ckpt_path))
+
+    model = getattr(model, f'{classifier_class}_mlp').to(device)
+    model.eval()
+
+    return model
+
+
+def eval_single_model(model, dset_path, classifier_class, my_labels_to_ref_labels=None, do_print=False):
+    dset = HDF5Dataset(dset_path)
+    data_loader = data.DataLoader(dset, **loader_params)
+    all_gt_labels = []
+    all_preds = []
+    for batch in tqdm(data_loader):
+        descs = batch[0].float().to(device)
+        labels = batch[1].numpy()[:, 0]
+        model_output = model(descs.unsqueeze(0)).squeeze(0).argmax(axis=1).detach().cpu().numpy()
+        if my_labels_to_ref_labels:
+            model_output = [my_labels_to_ref_labels[x] for x in model_output]
+        all_gt_labels += [x for x in labels]
+        all_preds += [x for x in model_output]
+
+    accuracy = accuracy_score(all_gt_labels, all_preds)
+    if do_print:
+        print(f'model\'s {classifier_class} accuracy is: {accuracy}')
+
+    return accuracy
+
+
+def eval_model_across_epochs(exp_name, classifier_class, obj_labels_dict, att_labels_dict, att_categories,
+                             my_labels_to_ref_labels=None):
+    dset_path = dset_path_template.format(classifier_class)
+    cur_ckpt_epoch = 0
+    while True:
+        cur_ckpt_path = glob(ckpt_path_template.format(exp_name, cur_ckpt_epoch))
+        if len(cur_ckpt_path) == 0:
+            return
+        cur_ckpt_path = cur_ckpt_path[0]
+        model = load_model(cur_ckpt_path, classifier_class, obj_labels_dict, att_labels_dict, att_categories)
+
+        cur_acc = eval_single_model(model, dset_path, classifier_class, my_labels_to_ref_labels)
+        print(f'For epoch {cur_ckpt_epoch} accuracy is {cur_acc}')
+        cur_ckpt_epoch += 1
 
 
 def main():
