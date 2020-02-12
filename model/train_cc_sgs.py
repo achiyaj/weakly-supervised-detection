@@ -2,12 +2,15 @@ import sys
 sys.path.insert(0, "/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/weakly-supervised-detection/")
 
 from model.cc_batcher import get_cc_dataloader
-from model.gqa_batcher import get_gqa_dataloader
+from model.config_cc import *
+if GQA_WEAK_SUPERVISION:
+    from model.gqa_weak_supervision_batcher import get_gqa_dataloader
+else:
+    from model.gqa_batcher import get_gqa_dataloader
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from model.mlp_model import TrainingMLPModel
-from model.config_cc import *
 import numpy as np
 import argparse
 import os
@@ -30,24 +33,29 @@ def get_model_loss(model, data, criterion, device, optimizer, is_train):
             att_labels = att_labels.squeeze().long().to(device)
             att_labels_packed = att_labels[att_labels != -1]
         else:
-            att_labels = {key: value.squeeze().long().to(device) for key, value in att_labels.items()}
+            # att_labels = {k: v.squeeze().long().to(device) if v is not None else v for k, v in att_labels.items()}
+            att_labels = {k: v.long().to(device) if v is not None else v for k, v in att_labels.items()}
     else:
         att_labels = None
 
     num_labels_per_image = data['num_labels_per_image']
-    is_strong_supervision = (num_labels_per_image[0] is None)
+    is_strong_supervision = (data['supervision_type'] == 1)
     # zero the parameter gradients
     if is_train:
         optimizer.zero_grad()
 
     # forward + backward + optimize
-    obj_outputs, att_outputs = model(inputs, num_descs, num_labels_per_image, obj_labels, att_labels)
+    obj_outputs, att_outputs = model(inputs, is_strong_supervision, num_descs, num_labels_per_image, obj_labels, att_labels)
     if is_strong_supervision:
         loss = model.collate_loss(obj_outputs, obj_labels, num_descs, criterion)
         if att_outputs is not None:
             loss += model.collate_loss(att_outputs, att_labels, num_descs, criterion)
     else:
-        loss = criterion(obj_outputs, obj_labels)
+        if type(obj_outputs) is dict:
+            loss = criterion(obj_outputs['dists'], obj_outputs['labels'].to(device))
+        else:
+            loss = criterion(obj_outputs, obj_labels)
+
         if att_outputs is not None:
             if not categorize_atts:
                 loss += criterion(att_outputs, att_labels_packed)
@@ -88,7 +96,8 @@ def main(args):
     train_multiloader = MultiLoader([cc_train_getter, gqa_train_getter], sampling_rates)
     criterion = nn.CrossEntropyLoss()
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    training_net = TrainingMLPModel(**mlp_params, objs_output_dim=len(obj_labels), atts_output_dim=len(att_labels),
+    training_net = TrainingMLPModel(**mlp_params, disentangle_objs_and_atts=DISENTANGLE_OBJS_AND_ATTS,
+                                    objs_output_dim=len(obj_labels), atts_output_dim=len(att_labels),
                                     att_categories=att_categories).to(device)
 
     optimizer = optim.Adam(training_net.parameters(), lr=3e-4)

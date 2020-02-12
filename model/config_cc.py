@@ -1,6 +1,6 @@
-relevant_data_file = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/data/cc/cc_top_{}{}_objs_{}_atts{}_data_{}_{}.json'
-cc_freqs_path = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/scene_graphs/vacancy/{}_freqs.json'
-cc_sgs_path = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/scene_graphs/vacancy/sgs_{}.json'
+relevant_data_file = '/specific/netapp5_2/gamir/achiya/vqa/gqa_max_loss/data/cc/cc_top_{}{}_objs_{}_atts{}_data_{}{}{}.json'
+cc_freqs_path = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/scene_graphs/{}/{}_freqs.json'
+cc_data_path = '/specific/netapp5_2/gamir/datasets/ConceptualCaptions/scene_graphs/{}/{}_data.json'
 gqa_objs_file = '/specific/netapp5_2/gamir/datasets/gqa/objects_dict.json'
 gqa_atts_file = '/specific/netapp5_2/gamir/datasets/gqa/attributes_dict.json'
 cc_descriptors_file = '/specific/netapp5_2/gamir/achiya/Downloads/firefox_downloads/googlebu_att.lmdb'
@@ -26,6 +26,18 @@ WITH_ATTS = True
 USE_ATT_CATEGORIES = WITH_ATTS and True
 RESTORE_FROM_CKPT = False
 DEBUG = False
+USE_TEXTUAL_SGS = False
+DISENTANGLE_OBJS_AND_ATTS = True
+GQA_WEAK_SUPERVISION = False
+
+if USE_TEXTUAL_SGS:
+    cc_data_path = cc_data_path.format('vacancy', '{}')
+    cc_freqs_path = cc_freqs_path.format('vacancy', '{}')
+else:
+    cc_data_path = cc_data_path.format('raw_sents_data', '{}')
+    cc_freqs_path = cc_freqs_path.format('raw_sents_data', '{}')
+
+
 CATEGORIES_TO_DROP = ['hposition', 'place', 'realism', 'room', 'texture', 'vposition', 'company', 'depth', 'flavor',
                       'race', 'location', 'hardness', 'gender', 'brightness']
 
@@ -57,5 +69,6 @@ def get_relevant_data_file(gqa_only, num_objs, num_atts, categorize_atts, dset, 
         num_atts,
         '_categorized' if categorize_atts else '',
         dset,
-        'add_gqa' if add_gqa else ''
+        '_add_gqa' if add_gqa else '',
+        '_raw_sents' if not USE_TEXTUAL_SGS else ''
     )

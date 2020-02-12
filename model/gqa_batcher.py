@@ -120,6 +120,7 @@ class GQAWithAttsDataset(Dataset):
         output['img_id'] = [x['img_id'] for x in batch]
         output['num_labels_per_image'] = [x['num_labels_per_image'] for x in batch]
         output['num_descs'] = torch.Tensor([x['num_descs'] for x in batch])
+        output['supervision_type'] = 1  # strong supervision
         return output
 
     def __del__(self):

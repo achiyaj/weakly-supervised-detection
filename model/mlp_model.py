@@ -19,10 +19,12 @@ class MLPModel(torch.nn.Module):
 
 
 class TrainingMLPModel(torch.nn.Module):
-    def __init__(self, hidden_dim, input_dim, objs_output_dim, att_categories=None, atts_output_dim=0):
+    def __init__(self, hidden_dim, input_dim, disentangle_objs_and_atts, objs_output_dim, att_categories=None,
+                 atts_output_dim=0):
         super(TrainingMLPModel, self).__init__()
         self.objs_mlp = MLPModel(hidden_dim, input_dim, objs_output_dim)
         self.use_att_categories = not (att_categories is None)
+        self.disentangle_objs_and_atts = disentangle_objs_and_atts
         if atts_output_dim > 0:
             if self.use_att_categories:
                 self.att_categories = att_categories
@@ -55,7 +57,7 @@ class TrainingMLPModel(torch.nn.Module):
 
         return loss
 
-    def forward(self, x, num_descs, num_labels_per_img, obj_labels, att_labels=None):
+    def forward(self, x, is_strong_supervision, num_descs, num_labels_per_img, obj_labels, att_labels=None):
         objs_outputs = self.objs_mlp(x)
         atts_outputs = None
 
@@ -78,10 +80,42 @@ class TrainingMLPModel(torch.nn.Module):
         else:
             matching_descs_att_dists = []
         total_labels_count = 0
-        is_strong_supervision = (num_labels_per_img[0] is None)
 
         if is_strong_supervision:
             return objs_outputs, atts_outputs
+        elif num_labels_per_img is None:  # this is a CC disentangled objs and atts batch
+            matching_descs_obj_dists = {'dists': [], 'labels': []}
+            # get matching objects distributions
+            for img_idx in range(x.shape[0]):
+                for obj_label_id in range(obj_labels.shape[1]):
+                    cur_obj_label = obj_labels[img_idx, obj_label_id]
+                    if cur_obj_label == -1:  # no more object labels for this image
+                        break
+                    matching_obj_probs = unpadded_imgs_objs[img_idx][:, cur_obj_label]
+                    matching_obj_desc_id = matching_obj_probs.argmax()
+                    relevant_obj_dist = unpadded_imgs_objs[img_idx][matching_obj_desc_id, :]
+                    matching_descs_obj_dists['dists'].append(relevant_obj_dist)
+                    matching_descs_obj_dists['labels'].append(cur_obj_label)
+
+                for att_category, category_att_labels in att_labels.items():
+                    if category_att_labels is None:
+                        continue
+                    for att_label_id in range(category_att_labels.shape[1]):
+                        cur_att_label = category_att_labels[img_idx, att_label_id]
+                        if cur_att_label == -1:  # no more object labels for this image
+                            break
+                        cur_category_att_probs = atts_outputs[img_idx][att_category][0, :, :]
+                        matching_att_probs = cur_category_att_probs[:, cur_att_label]
+                        matching_att_desc_id = matching_att_probs.argmax()
+                        relevant_att_dist = cur_category_att_probs[matching_att_desc_id, :]
+                        matching_descs_att_dists[att_category]['dists'].append(relevant_att_dist)
+                        matching_descs_att_dists[att_category]['labels'].append(cur_att_label)
+
+            obj_dists = {
+                'dists': torch.stack(matching_descs_obj_dists['dists']),
+                'labels': torch.Tensor(matching_descs_obj_dists['labels']).long()
+            }
+
         else:
             for img_idx in range(x.shape[0]):
                 for label_id in range(num_labels_per_img[img_idx]):
@@ -100,9 +134,15 @@ class TrainingMLPModel(torch.nn.Module):
                             att_category, att_label = category_and_att
                             cur_category_att_probs = atts_outputs[img_idx][att_category][0, :, :]
                             matching_att_probs = cur_category_att_probs[:, att_label]
-                            matching_desc_id = (matching_obj_probs * matching_att_probs).argmax()
-                            relevant_obj_dist = unpadded_imgs_objs[img_idx][matching_desc_id, :]
-                            relevant_att_dist = cur_category_att_probs[matching_desc_id, :]
+                            if self.disentangle_objs_and_atts:
+                                matching_obj_desc_id = matching_obj_probs.argmax()
+                                matching_att_desc_id = matching_att_probs.argmax()
+                                relevant_obj_dist = unpadded_imgs_objs[img_idx][matching_obj_desc_id, :]
+                                relevant_att_dist = cur_category_att_probs[matching_att_desc_id, :]
+                            else:
+                                matching_desc_id = (matching_obj_probs * matching_att_probs).argmax()
+                                relevant_obj_dist = unpadded_imgs_objs[img_idx][matching_desc_id, :]
+                                relevant_att_dist = cur_category_att_probs[matching_desc_id, :]
                             matching_descs_obj_dists.append(relevant_obj_dist)
                             matching_descs_att_dists[att_category]['dists'].append(relevant_att_dist)
                             matching_descs_att_dists[att_category]['labels'].append(att_label)
@@ -123,19 +163,21 @@ class TrainingMLPModel(torch.nn.Module):
                     total_labels_count += 1
 
             obj_dists = torch.stack(matching_descs_obj_dists)
-            att_dists = None
-            if len(matching_descs_att_dists) > 0:
-                if self.use_att_categories:
-                    att_dists = {key: {} for key in self.att_categories.keys()}
-                    for att_category, att_data in matching_descs_att_dists.items():
-                        if len(att_data['dists']) > 0:  # at least one distributions for this category
-                            att_dists[att_category] = {
-                                'dists': torch.stack(att_data['dists']),
-                                'labels': torch.stack(att_data['labels'])
-                            }
-                else:
-                    att_dists = torch.stack(matching_descs_att_dists)
-            return obj_dists, att_dists
+
+        att_dists = None
+        if len(matching_descs_att_dists) > 0:
+            if self.use_att_categories:
+                att_dists = {key: {} for key in self.att_categories.keys()}
+                for att_category, att_data in matching_descs_att_dists.items():
+                    if len(att_data['dists']) > 0:  # at least one distributions for this category
+                        att_dists[att_category] = {
+                            'dists': torch.stack(att_data['dists']),
+                            'labels': torch.stack(att_data['labels'])
+                        }
+            else:
+                att_dists = torch.stack(matching_descs_att_dists)
+
+        return obj_dists, att_dists
 
 
 class InferenceMLPModel(torch.nn.Module):

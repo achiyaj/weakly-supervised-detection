@@ -2,12 +2,9 @@ from sklearn.metrics import confusion_matrix
 import numpy as np
 import json
 import os
-
 import seaborn as sn
 import pandas as pd
 import matplotlib.pyplot as plt
-
-
 from model.config_gqa import *
 
 
@@ -98,7 +95,6 @@ def eval_batch_prediction_cc(all_gt_labels, preds, img_ids):
         relevant_pred_labels += [pred_label for i, pred_label in enumerate(cur_preds) if str(i) in cur_gt_labels.keys()]
 
     return gt_labels, relevant_pred_labels
-
 
 
 def get_cm_path(output_path, epoch, acc):
