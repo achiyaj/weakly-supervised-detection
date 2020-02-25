@@ -23,7 +23,7 @@ att_categories = json.load(open(atts_file))
 NUM_DIST_TOP_ENTRIES = 20
 
 dists_plot_args = {
-    'width': 0.27
+    'width': 1.1 / (len(dsets_paths) + 1)
 }
 
 
@@ -87,7 +87,7 @@ def get_vocab_comparison():
 
         ind = np.arange(len(top_gqa_labels))
         bars_width = dists_plot_args['width']
-        fig = plt.figure(figsize=(len(top_gqa_labels) * len(dset_names) * bars_width + 1, 10))
+        fig = plt.figure(figsize=(len(top_gqa_labels) * len(dset_names) * bars_width * 2, 10))
         ax = fig.add_subplot(111)
         legend_colors_list = []
 
@@ -95,8 +95,15 @@ def get_vocab_comparison():
             cur_freqs = dsets_freqs[cur_dset_name]
             cur_dset_top_labels_freqs = [cur_freqs[cur_label] if cur_label in cur_freqs else 0 for cur_label in top_gqa_labels]
 
-            cur_rect = ax.bar(ind + dset_idx * bars_width, cur_dset_top_labels_freqs, bars_width)
-            legend_colors_list.append(cur_rect[0])
+            rect = ax.bar(ind + dset_idx * bars_width, cur_dset_top_labels_freqs, bars_width)
+            legend_colors_list.append(rect[0])
+
+            dset_total_num_labels = sum(list(cur_freqs.values()))
+            for i, cur_rect in enumerate(rect.patches):
+                cur_percentage = round((cur_dset_top_labels_freqs[i] / dset_total_num_labels) * 100, 2)
+
+                ax.text(cur_rect.get_x() - 0.02, cur_rect.get_height() + 10, str(cur_percentage),
+                        color='black', size=10)
 
         ax.set_ylabel('Num Occurrences')
         ax.set_xticks(ind + bars_width)
@@ -108,5 +115,5 @@ def get_vocab_comparison():
 
 
 if __name__ == '__main__':
-    get_data_stats()
+    # get_data_stats()
     get_vocab_comparison()
